@@ -27,6 +27,7 @@
       border: none;
       color: white;
       border-radius: 8px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -40,40 +41,21 @@
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
-    const captureButton = document.getElementById('capture');
-    let isCaptured = false;
+    const button = document.getElementById('capture');
+    let stream = null;
+    let captured = false;
 
-    // カメラ起動
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { exact: "environment" } }, // 外カメラ優先
-      audio: false
-    }).then(stream => {
-      video.srcObject = stream;
-    }).catch(err => {
-      alert("カメラの起動に失敗しました：" + err.message);
-    });
-
-    // ボタンで撮影／撮り直し切り替え
-    captureButton.addEventListener('click', () => {
-      if (!isCaptured) {
-        // 撮影
-        const context = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        video.style.display = 'none';
-        canvas.style.display = 'block';
-        captureButton.textContent = "🔄 撮り直す";
-        isCaptured = true;
-      } else {
-        // 撮り直し
-        video.style.display = 'block';
-        canvas.style.display = 'none';
-        captureButton.textContent = "📸 撮影する";
-        isCaptured = false;
-      }
-    });
-  </script>
-</body>
-</html>
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" } },
+          audio: false
+        });
+        video.srcObject = stream;
+      } catch (e) {
+        alert("外カメラが使えません。内カメラを起動します。");
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
