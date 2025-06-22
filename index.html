@@ -43,6 +43,20 @@
     .share-buttons button {
       background: #d0eaff;
     }
+    .line-explanation {
+      background-color: #fff3f0;
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 1rem;
+      text-align: left;
+    }
+    .line-explanation h3 {
+      color: #4a7ebb;
+      margin-bottom: 0.5rem;
+    }
+    .line-explanation p {
+      margin: 0.3rem 0 1rem;
+    }
   </style>
 </head>
 <body>
@@ -67,6 +81,14 @@
   <canvas id="canvas" style="display:none;"></canvas>
   <canvas id="lineCanvas" style="display:none;"></canvas>
   <div id="results"></div>
+
+  <div class="line-explanation">
+    <h3>✋ 主な手相の線の意味</h3>
+    <p><strong>感情線：</strong>恋愛傾向や感受性を表します。長くてはっきりしていれば情熱的な性格。</p>
+    <p><strong>頭脳線：</strong>考え方や知性、仕事の向き不向きを示します。曲線的なら感性重視、直線的なら論理的。</p>
+    <p><strong>生命線：</strong>体力や健康状態、バイタリティの象徴。長く濃ければエネルギッシュ！</p>
+  </div>
+
   <div class="share-buttons">
     <button onclick="shareLine()">LINEでシェア</button>
     <button onclick="shareInsta()">インスタで送る</button>
