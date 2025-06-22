@@ -14,7 +14,6 @@
     padding: 1em;
     text-align: center;
     position: relative;
-    overflow-x: hidden;
   }
   h1 {
     font-size: 1.5em;
@@ -60,6 +59,13 @@
   #countdownText {
     font-weight: 900;
     text-shadow: 0 0 10px #fff;
+  }
+  .share-btn {
+    background-color: #ffe0b2;
+    color: #5d4037;
+    margin: 0.5em;
+    border: none;
+    cursor: pointer;
   }
 </style>
 </head>
@@ -162,12 +168,9 @@
       return;
     }
     processing = true;
-    // 画像をキャンバスに描画
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // MediaPipeのHands解析はここで使わず、OpenCVでのエッジ抽出＋TensorFlow.jsでAI判定の流れ
 
     const src = cv.imread(canvas);
     const gray = new cv.Mat();
@@ -176,7 +179,6 @@
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.Canny(gray, edges, 50, 150);
 
-    // 輪郭検出
     let contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
     cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -190,7 +192,7 @@
       const length = cv.arcLength(contour, false);
       if (length < 30) {
         contour.delete();
-        continue; // 小さい線は除外
+        continue;
       }
       const rotatedRect = cv.minAreaRect(contour);
       let angle = rotatedRect.angle;
@@ -215,7 +217,6 @@
     const angleScore = (avgAngle + 45) / 90;
     let combinedScore = Math.floor((lengthScore * 0.6 + angleScore * 0.4) * 19);
 
-    // AIモデルで判定
     let tfImg = tf.browser.fromPixels(canvas);
     tfImg = tf.image.resizeBilinear(tfImg, [64, 64]);
     tfImg = tfImg.expandDims(0).toFloat().div(255);
@@ -243,7 +244,7 @@
     processing = false;
   }
 
-  // MediaPipe Handsセットアップ（手の左右判別）
+  // MediaPipe Handsセットアップ
   hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
@@ -260,21 +261,14 @@
     }
   });
 
-  async function startCamera() {
+  startCameraBtn.addEventListener("click", async () => {
     startCameraBtn.disabled = true;
+    resultBox.textContent = "";
     try {
-      // 外カメラ優先取得（exact付きで失敗したらフォールバック）
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } }
-        });
-      } catch (err) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }
-        });
-      }
+      const constraints = { video: { facingMode: "environment" }, audio: false };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
+
       camera = new Camera(video, {
         onFrame: async () => {
           await hands.send({ image: video });
@@ -282,17 +276,16 @@
         width: 640,
         height: 480
       });
-      camera.start();
+      await camera.start();
+
+      model = await tf.loadLayersModel("/model/model.json");
       shutterButton.style.display = "inline-block";
       startCameraBtn.style.display = "none";
-
-      // モデル読み込み（環境に合わせてパスを調整）
-      model = await tf.loadLayersModel("/model/model.json");
-    } catch (e) {
-      alert("カメラ起動に失敗しました: " + e.message);
+    } catch (err) {
+      alert("カメラ起動に失敗しました: " + err.message);
       startCameraBtn.disabled = false;
     }
-  }
+  });
 
   shutterButton.addEventListener("click", () => {
     if (processing) return;
