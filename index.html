@@ -1,31 +1,45 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>ゆるかわ手相診断♡</title>
+  <meta charset="UTF-8" />
+  <title>ゆるかわ手相診断♡カメラ起動版</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
-    body { background:#f5f3f1; color:#444; font-family:"Rounded M+ 1c","ヒラギノ丸ゴ Pro","Arial",sans-serif; text-align:center; padding:1rem; }
-    h1 { font-size:1.6rem; margin-bottom:0.5rem; }
-    video, canvas { width:100%; max-width:360px; border-radius:10px; }
-    .controls, .result, .share { margin:1rem 0; }
-    select, button { font-size:1rem; padding:0.6em; margin:0.3em; border-radius:8px; border:none; background:#ddd; }
-    button { background:#fff; }
-    .note { font-size:0.9rem; color:#666; }
-    .result { background:#fff; padding:1rem; border-radius:10px; display:none; }
-    .share a { margin:0 0.5em; text-decoration:none; color:#fff; padding:0.6em 1.2em; border-radius:20px; }
-    #btnSwitch { position:absolute; top:10px; right:10px; }
+    body { background: #f5f3f1; color: #444; font-family: "Rounded M+ 1c", "ヒラギノ丸ゴ Pro", "Arial", sans-serif; text-align: center; padding: 1rem; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+    video, canvas { width: 100%; max-width: 360px; border-radius: 10px; }
+    .controls, .result, .share { margin: 1rem 0; }
+    select, button { font-size: 1rem; padding: 0.6em; margin: 0.3em; border-radius: 8px; border: none; background: #ddd; }
+    button { background: #fff; }
+    .note { font-size: 0.9rem; color: #666; }
+    .result { background: #fff; padding: 1rem; border-radius: 10px; display: none; }
+    .share a { margin: 0 0.5em; text-decoration: none; color: #fff; padding: 0.6em 1.2em; border-radius: 20px; }
+    #btnSwitch { position: absolute; top: 10px; right: 10px; }
   </style>
 </head>
 <body>
-  <h1>🎉 合コン用・ゆるかわ手相診断</h1>
-  <p class="note">「外カメラ」「左右/ジャンル」を選んでね♡</p>
+  <h1>🎉 合コン用♡ゆるかわ手相診断</h1>
+  <p class="note">外カメラ優先・左右/ジャンルを選んでね</p>
   <button id="btnSwitch">カメラ切替</button>
   <div class="controls">
-    <select id="handSelect"><option value="">— 手を選ぶ —</option><option value="left">左手（素質）</option><option value="right">右手（努力）</option></select>
-    <select id="genreSelect"><option value="">— ジャンル選択 —</option><option value="love">恋愛</option><option value="work">仕事</option><option value="money">金運</option><option value="health">健康</option><option value="personality">性格</option><option value="all">全部自動診断</option></select>
+    <select id="handSelect">
+      <option value="">— 手を選ぶ —</option>
+      <option value="left">左手（素質）</option>
+      <option value="right">右手（努力）</option>
+    </select>
+    <select id="genreSelect">
+      <option value="">— ジャンル選択 —</option>
+      <option value="love">恋愛</option>
+      <option value="work">仕事</option>
+      <option value="money">金運</option>
+      <option value="health">健康</option>
+      <option value="personality">性格</option>
+      <option value="all">全部自動診断</option>
+    </select>
   </div>
-  <video id="video" autoplay playsinline></video>
+  <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas" style="display:none;"></canvas>
   <button id="captureBtn">📸 カシャッ!</button>
   <div class="result" id="resultBox"></div>
@@ -40,18 +54,33 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 
   <script>
-    const video = document.getElementById('video'), canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
     const btnSwitch = document.getElementById('btnSwitch');
     let camFacing = 'environment';
     let stream;
 
     async function startCamera(){
-      if(stream) stream.getTracks().forEach(t=>t.stop());
-      stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:camFacing}});
-      video.srcObject = stream;
-      await new Promise(r=>video.onloadedmetadata = r);
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      if (stream) stream.getTracks().forEach(t=>t.stop());
+      const constraints = {
+        video: {
+          facingMode: { ideal: camFacing },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      };
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        await new Promise(r=>video.onloadedmetadata = r);
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      } catch (err) {
+        console.error("カメラ起動エラー:", err);
+        alert("⚠️ カメラを許可してください！または https:// でアクセスしてください。");
+      }
     }
     await startCamera();
     btnSwitch.onclick = () => { camFacing = camFacing==='environment'?'user':'environment'; startCamera(); };
@@ -60,14 +89,9 @@
     hands.setOptions({maxNumHands:1,minDetectionConfidence:0.7});
     hands.onResults(onHands);
 
-    // 仮・学習済TFモデル読み込み場所（要実装）
-    const tfModel = await tf.loadGraphModel('model.json').catch(_=>null);
-
-    function onHands(results){
+    async function onHands(results){
       const handlab = results.multiHandedness?.[0]?.label || '?';
       const cntFingers = results.multiHandLandmarks?.[0]?.length || 0;
-      // OpenCVで線抽出 ← 仮。あとでCanny解析
-      // 簡易ランダム評価サンプル
       const score = Math.min(50, Math.max(1, Math.floor(Math.random()*50)+1));
       const handSide = handlab==='Left'?'左':'右';
       const genre = document.getElementById('genreSelect').value;
@@ -78,25 +102,26 @@
         `指：${cntFingers}本<br>`+
         `線スコア：${score}/50<br>`+
         `コメント：「${comment}」<br>`+
-        `<em>※実際にOpenCV / TF解析で評価できます</em>`;
+        `<em>※ OpenCV/TF.js解析でさらに精度UP可能</em>`;
       document.getElementById('resultBox').style.display = 'block';
       document.getElementById('shareBox').style.display = 'block';
-      const text = `私の手相診断 (${handSide}手・${genreText})\n${comment}`;
+      const text = `💫私の手相診断 (${handSide}手・${genreText})\n${comment}`;
       document.getElementById('shareLine').href = 'https://line.me/R/share?text=' + encodeURIComponent(text);
       document.getElementById('shareInstagram').href = 'instagram://message?text=' + encodeURIComponent(text);
     }
 
     document.getElementById('captureBtn').onclick = () => {
-      if(!document.getElementById('handSelect').value||!document.getElementById('genreSelect').value){
-        alert('手とジャンルを選んでね♡'); return;
+      if(!document.getElementById('handSelect').value || !document.getElementById('genreSelect').value){
+        alert('手とジャンルを選んでね♡');
+        return;
       }
-      ctx.drawImage(video,0,0);
+      ctx.drawImage(video, 0, 0);
       hands.send({image: video});
     };
 
     function generateComment(hand, sc, genre){
       const p = ["ほんわか","がんばり屋","マイペース","行動的","愛され"];
-      const b = ["感情豊かで魅力的","地に足ついてる努力派","ゆるふわ癒し系","チャレンジ精神旺盛","安定感バツグン"];
+      const b = ["感情豊かで魅力的","地に足ついてる努力派","癒し系の人気者","チャレンジ精神旺盛","バランス良き"];
       const idx = sc % p.length;
       return `${p[idx]}な${genre}運✨${b[idx]}`;
     }
