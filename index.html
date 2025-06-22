@@ -118,7 +118,7 @@
     let currentHand = "left";
     let model;
     let camera;
-    let isProcessing = false;  // 判定中は連続処理防止
+    let isProcessing = false;
     let streamingStarted = false;
 
     const detailedComments = {
@@ -155,7 +155,7 @@
     });
 
     hands.onResults(async (results) => {
-      if (!isProcessing) return; // 判定時以外は無視
+      if (!isProcessing) return;
 
       if (results.multiHandedness && results.multiHandedness.length > 0) {
         currentHand = results.multiHandedness[0].label === "Right" ? "right" : "left";
@@ -188,10 +188,9 @@
         const length = cv.arcLength(contour, false);
         if (length < 30) {
           contour.delete();
-          continue; // 小さい線は除外
+          continue;
         }
 
-        // 最小外接矩形で傾きを取得
         const rotatedRect = cv.minAreaRect(contour);
         let angle = rotatedRect.angle;
         if (angle < -45) angle += 90;
@@ -208,19 +207,14 @@
       src.delete();
       edges.delete();
 
-      // 平均長さ・平均角度を計算
       const avgLength = count > 0 ? totalLength / count : 0;
       const avgAngle = count > 0 ? totalAngle / count : 0;
 
-      // 長さスコア（0〜1）
-      const lengthScore = Math.min(1, avgLength / 300); // 300px以上は満点
-      // 傾きスコア（-45〜45度 → 0〜1）
+      const lengthScore = Math.min(1, avgLength / 300);
       const angleScore = (avgAngle + 45) / 90;
 
-      // 総合スコア（0〜19）
       let combinedScore = Math.floor((lengthScore * 0.6 + angleScore * 0.4) * 19);
 
-      // AIモデルによる線種判定
       let tfImg = tf.browser.fromPixels(canvas);
       tfImg = tf.image.resizeBilinear(tfImg, [64, 64]);
       tfImg = tfImg.expandDims(0).toFloat().div(255);
@@ -232,7 +226,6 @@
         const maxIndex = prediction.indexOf(Math.max(...prediction));
         predictionText = `AI判定：${labels[maxIndex]}が明瞭です`;
 
-        // 生命線が強調されたらスコアに加算（例）
         if (labels[maxIndex] === "生命線") {
           combinedScore = Math.min(19, combinedScore + 3);
         }
@@ -247,24 +240,24 @@
         <p>${predictionText}</p>
         <p>線の平均長さ: ${avgLength.toFixed(1)} px<br>線の傾き: ${avgAngle.toFixed(1)}°</p>`;
 
-      // 判定完了で処理停止
       isProcessing = false;
       shutterButton.disabled = false;
       shutterButton.textContent = "📸 シャッター";
     });
 
-    startButton.addEventListener("click", async () => {
-      if (streamingStarted) return; // 既に起動済み
+    async function startCameraFunc() {
+      if (streamingStarted) return;
       try {
+        console.log("カメラ起動中...");
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } }, // 外カメラ優先
+          video: { facingMode: "environment" }, // exactは外してみる
           audio: false,
         });
         video.srcObject = stream;
 
         camera = new Camera(video, {
           onFrame: async () => {
-            if (!isProcessing) return; // 判定時のみ処理
+            if (!isProcessing) return;
             await hands.send({ image: video });
           },
           width: 640,
@@ -281,12 +274,15 @@
       } catch (e) {
         alert("カメラの起動に失敗しました: " + e.message);
       }
+    }
+
+    startButton.addEventListener("click", () => {
+      startCameraFunc();
     });
 
     shutterButton.addEventListener("click", () => {
       if (!streamingStarted || isProcessing) return;
 
-      // カウントダウン開始
       let count = 3;
       countdownEl.textContent = count;
       countdownEl.style.display = "block";
@@ -301,10 +297,9 @@
           clearInterval(countdownInterval);
           countdownEl.style.display = "none";
 
-          // 判定スタート
           isProcessing = true;
           resultBox.textContent = "占い中…✨";
-          hands.send({ image: video }); // 手動1回送信
+          hands.send({ image: video });
         }
       }, 1000);
     });
