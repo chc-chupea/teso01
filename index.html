@@ -65,24 +65,19 @@
   <br>
   <button onclick="takePhoto()">📸 シャッター</button>
   <canvas id="canvas" style="display:none;"></canvas>
-  <canvas id="lineCanvas" style="display:none;"></canvas>
   <div id="results"></div>
   <div class="share-buttons">
     <button onclick="shareLine()">LINEでシェア</button>
     <button onclick="shareInsta()">インスタで送る</button>
   </div>
 
-  <script async src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script>
     let stream;
     let usingFront = false;
     const videoElement = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const lineCanvas = document.getElementById('lineCanvas');
 
     async function startCamera() {
       if (stream) {
@@ -96,6 +91,7 @@
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       videoElement.srcObject = stream;
 
+      // MediaPipe Hands セットアップ
       const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
       hands.setOptions({
         maxNumHands: 1,
@@ -121,34 +117,17 @@
     }
 
     function takePhoto() {
+      const canvas = document.getElementById('canvas');
       canvas.width = videoElement.videoWidth;
       canvas.height = videoElement.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(videoElement, 0, 0);
       new Audio('camera-shutter.mp3').play();
-      setTimeout(() => detectPalmLines(), 500);
-    }
-
-    function detectPalmLines() {
-      lineCanvas.width = canvas.width;
-      lineCanvas.height = canvas.height;
-      let src = cv.imread(canvas);
-      let dst = new cv.Mat();
-      cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY);
-      cv.GaussianBlur(src, src, new cv.Size(5, 5), 0, 0);
-      cv.Canny(src, dst, 50, 150, 3, false);
-      cv.imshow("lineCanvas", dst);
-
-      document.getElementById('results').innerHTML += '<p>手の線を検出しました（感情線・頭脳線・生命線）</p>';
-      const dataURL = lineCanvas.toDataURL();
-      document.getElementById('results').innerHTML += `<img src="${dataURL}" alt="線検出画像">`;
-
-      src.delete();
-      dst.delete();
     }
 
     function onResults(results) {
       if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+
       const hand = results.multiHandLandmarks[0];
       let extendedFingers = 0;
       const fingerTips = [8, 12, 16, 20];
@@ -161,7 +140,9 @@
         }
       });
 
+      // 親指判定（x軸で検出）
       if (hand[4].x < hand[3].x) extendedFingers++;
+
       document.getElementById('results').innerHTML = `<p>指の本数検出：${extendedFingers}本</p>`;
     }
 
@@ -173,10 +154,6 @@
 
     function shareInsta() {
       alert("インスタDMはこの画面のスクショを送ってみてね💬");
-    }
-
-    function onOpenCvReady() {
-      console.log('OpenCV.js is ready');
     }
   </script>
 </body>
