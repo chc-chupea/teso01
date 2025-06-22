@@ -1,115 +1,242 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>✨合コン手相診断✨</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>手相占いカメラ診断</title>
+  <link href="https://fonts.googleapis.com/css2?family=Kosugi+Maru&display=swap" rel="stylesheet" />
   <style>
     body {
-      font-family: 'Noto Sans JP', sans-serif;
-      background-color: #fff0f5;
-      text-align: center;
+      font-family: 'Kosugi Maru', sans-serif;
+      background-color: #fdf5e6;
       color: #333;
-      padding: 10px;
-      max-width: 480px;
-      margin: auto;
+      margin: 0;
+      padding: 1em;
+      text-align: center;
     }
-    .button {
-      background-color: #ff69b4;
-      color: #fff;
-      padding: 12px 20px;
-      border-radius: 25px;
-      margin: 15px 10px;
-      cursor: pointer;
-      font-size: 1.1em;
+    h1 {
+      font-size: 1.5em;
+      color: #7566a0;
+      margin-bottom: 0.5em;
+    }
+    select,
+    button {
+      font-size: 1em;
+      padding: 0.5em;
+      margin: 1em 0;
+      border-radius: 12px;
+      border: 1px solid #ccc;
+      background-color: #fff;
+    }
+    #videoElement,
+    canvas {
+      width: 100%;
+      max-width: 400px;
+      border-radius: 10px;
+      margin: 0.5em 0;
+    }
+    .result {
+      background-color: #fff;
+      border-radius: 10px;
+      padding: 1em;
+      margin-top: 1em;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      white-space: pre-line;
+    }
+    .share-btn {
+      background-color: #ffe0b2;
+      color: #5d4037;
+      margin: 0.5em;
       border: none;
-      transition: background-color 0.3s ease;
-    }
-    .button[disabled] {
-      background-color: #ccc;
-      cursor: not-allowed;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <h2>📷 合コン 手のひらスマホ診断 ✨</h2>
-  <label for="handSelect">📌 手の選択：</label>
-  <select id="handSelect">
-    <option value="">-- 左右の手を選んでね --</option>
-    <option value="Left">左手（素質）</option>
-    <option value="Right">右手（努力・今）</option>
-  </select>
-  <br>
-  <label for="genreSelect">📌 ジャンル選択：</label>
-  <select id="genreSelect">
-    <option value="">-- ジャンルを選んでね --</option>
+  <h1>スマホ手相占いカメラ診断</h1>
+  <p>まずはジャンルを選んでね！（全部診断もOK）</p>
+  <select id="genre">
+    <option value="">ジャンルを選んでください</option>
+    <option value="all">全部自動診断</option>
     <option value="love">恋愛</option>
     <option value="work">仕事</option>
     <option value="money">金運</option>
     <option value="health">健康</option>
     <option value="personality">性格</option>
-    <option value="all">全部診断</option>
   </select>
-  <br>
-  <video id="video" autoplay playsinline></video>
-  <canvas id="output" width="640" height="480" style="display:none;"></canvas>
-  <br>
-  <button id="captureButton" class="button" disabled>📷 撮影＋診断！</button>
-  <div id="result" style="white-space: pre-wrap; margin-top: 1em; background: #fff; border: 1px dashed #ff69b4; padding: 1em; border-radius: 10px;">👉 結果がここに表示されます ✨</div>
+  <br />
+  <button onclick="startCamera()">カメラ起動して手を映す</button>
+  <video autoplay playsinline id="videoElement"></video>
+  <canvas id="canvas"></canvas>
+  <div class="result" id="result"></div>
+  <button class="share-btn" onclick="shareLINE()">LINEでシェア</button>
+  <button class="share-btn" onclick="shareInstagram()">インスタDMで送る</button>
 
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://docs.opencv.org/4.6.0/opencv.js"></script>
   <script>
-    let palmistryComments = {};
-    const captureButton = document.getElementById('captureButton');
+    const video = document.getElementById("videoElement");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const resultBox = document.getElementById("result");
 
-    // JSONデータの読み込み
-    fetch('./comments.json')
-      .then(response => {
-        if (!response.ok) throw new Error('読み込みエラー');
-        return response.json();
-      })
-      .then(data => {
-        palmistryComments = data;
-        captureButton.disabled = false;
-        console.log('✅ コメントJSON読み込み完了');
-      })
-      .catch(err => {
-        alert('コメントデータの読み込みに失敗しました。');
-        console.error(err);
-      });
+    let handednessResult = "";
+    let currentHand = "left";
+    let model;
 
-    // Utility関数
-    function getSoshiOrGenzaiLabel(hand) {
-      return hand === 'Left' ? '（生まれ持った素質）' : '（今の努力や環境）';
-    }
+    const detailedComments = {
+      left: {
+        personality: Array.from({ length: 20 }, (_, i) => `【性格Lv${i + 1}】繊細で思慮深い一面あり`),
+        love: Array.from({ length: 20 }, (_, i) => `【恋愛Lv${i + 1}】理想高めで内に秘めた情熱派`),
+        health: Array.from({ length: 20 }, (_, i) => `【健康Lv${i + 1}】自己管理力が光るタイプ`),
+        all: Array.from({ length: 20 }, (_, i) => `【全体Lv${i + 1}】内面の魅力がじわじわ伝わる人`),
+      },
+      right: {
+        work: Array.from({ length: 20 }, (_, i) => `【仕事Lv${i + 1}】着実に信頼を積む努力家`),
+        money: Array.from({ length: 20 }, (_, i) => `【金運Lv${i + 1}】堅実派でコツコツ型の貯蓄スタイル`),
+        health: Array.from({ length: 20 }, (_, i) => `【健康Lv${i + 1}】活発でポジティブ体質`),
+        love: Array.from({ length: 20 }, (_, i) => `【恋愛Lv${i + 1}】前向きな恋の立役者`),
+        all: Array.from({ length: 20 }, (_, i) => `【全体Lv${i + 1}】今が勝負どき、努力は実を結ぶ`),
+      },
+    };
 
-    function getResultComment(hand, genre, level) {
-      const base = palmistryComments[genre] || [];
-      return base[level] + `\n（${hand === 'Left' ? '素質診断' : '現在の状態診断'}）`;
-    }
+    const generateDetailedComment = (score, genre, hand) => {
+      const dict = detailedComments[hand][genre] || detailedComments[hand].all;
+      const level = Math.max(0, Math.min(19, Math.floor(score)));
+      return dict[level] || "分析中…";
+    };
 
-    function getFinalResultText(hand, genre, level, comment, extraInfo = '') {
-      return `✨ ${hand} 手${getSoshiOrGenzaiLabel(hand)}の診断 ✨\n\n` +
-             `💖 ジャンル: ${genre}\n🔢 レベル: ${level + 1}/50\n💬 コメント: ${comment}\n${extraInfo}`;
-    }
-
-    // 手相診断処理（簡略版）
-    captureButton.addEventListener('click', () => {
-      const hand = document.getElementById('handSelect').value;
-      const genre = document.getElementById('genreSelect').value;
-      if (!hand || !genre) {
-        alert("👉 まずは『左右の手』と『ジャンル』を選んでね！");
-        return;
-      }
-      const level = Math.floor(Math.random() * 50);
-      const comment = getResultComment(hand, genre, level);
-      const resultText = getFinalResultText(hand, genre, level, comment);
-      document.getElementById('result').textContent = resultText;
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
     });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7,
+    });
+
+    hands.onResults(async (results) => {
+      if (results.multiHandedness && results.multiHandedness.length > 0) {
+        currentHand = results.multiHandedness[0].label === "Right" ? "right" : "left";
+        handednessResult = currentHand === "right" ? "右手（現在・運勢）" : "左手（素質・性格）";
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+      // OpenCV処理：グレースケール＆Cannyエッジ抽出
+      const src = cv.imread(canvas);
+      const gray = new cv.Mat();
+      const edges = new cv.Mat();
+
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      cv.Canny(gray, edges, 50, 150);
+
+      // 輪郭検出
+      let contours = new cv.MatVector();
+      let hierarchy = new cv.Mat();
+      cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+      let totalLength = 0;
+      let totalAngle = 0;
+      let count = 0;
+
+      for (let i = 0; i < contours.size(); i++) {
+        let contour = contours.get(i);
+        const length = cv.arcLength(contour, false);
+        if (length < 30) {
+          contour.delete();
+          continue; // 小さい線は除外
+        }
+
+        // 最小外接矩形で傾きを取得
+        const rotatedRect = cv.minAreaRect(contour);
+        let angle = rotatedRect.angle;
+        if (angle < -45) angle += 90;
+
+        totalLength += length;
+        totalAngle += angle;
+        count++;
+        contour.delete();
+      }
+
+      contours.delete();
+      hierarchy.delete();
+      gray.delete();
+      src.delete();
+      edges.delete();
+
+      // 平均長さ・平均角度を計算
+      const avgLength = count > 0 ? totalLength / count : 0;
+      const avgAngle = count > 0 ? totalAngle / count : 0;
+
+      // 長さスコア（0〜1）
+      const lengthScore = Math.min(1, avgLength / 300); // 300px以上は満点
+      // 傾きスコア（-45〜45度 → 0〜1）
+      const angleScore = (avgAngle + 45) / 90;
+
+      // 総合スコア（0〜19）
+      let combinedScore = Math.floor((lengthScore * 0.6 + angleScore * 0.4) * 19);
+
+      // AIモデルによる線種判定
+      let tfImg = tf.browser.fromPixels(canvas);
+      tfImg = tf.image.resizeBilinear(tfImg, [64, 64]);
+      tfImg = tfImg.expandDims(0).toFloat().div(255);
+
+      let predictionText = "";
+      if (model) {
+        const prediction = await model.predict(tfImg).data();
+        const labels = ["感情線", "頭脳線", "生命線", "運命線"];
+        const maxIndex = prediction.indexOf(Math.max(...prediction));
+        predictionText = `AI判定：${labels[maxIndex]}が明瞭です`;
+
+        // 生命線が強調されたらスコアに加算（例）
+        if (labels[maxIndex] === "生命線") {
+          combinedScore = Math.min(19, combinedScore + 3);
+        }
+      }
+      tfImg.dispose();
+
+      const genre = document.getElementById("genre").value || "all";
+      const comment = generateDetailedComment(combinedScore, genre, currentHand);
+
+      resultBox.innerHTML = `<h2>${handednessResult} 診断</h2>
+        <p>${comment}</p>
+        <p>${predictionText}</p>
+        <p>線の平均長さ: ${avgLength.toFixed(1)} px<br>線の傾き: ${avgAngle.toFixed(1)}°</p>`;
+    });
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        const camera = new Camera(video, {
+          onFrame: async () => {
+            await hands.send({ image: video });
+          },
+          width: 640,
+          height: 480,
+        });
+        camera.start();
+        model = await tf.loadLayersModel("/model/model.json");
+      } catch (e) {
+        alert("カメラの起動に失敗しました: " + e.message);
+      }
+    }
+
+    function shareLINE() {
+      const text = encodeURIComponent("手相占いやってみた！\n診断結果はこちら→ https://your-app-link.com");
+      window.open(`https://line.me/R/msg/text/?${text}`, "_blank");
+    }
+
+    function shareInstagram() {
+      alert("インスタのDMには、診断結果をスクショして送ってね！");
+    }
   </script>
 </body>
 </html>
