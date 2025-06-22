@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -14,7 +15,7 @@
     }
     h1 {
       font-size: 1.8rem;
-      color: #4a7ebb;
+      color: #4a7ebB;
     }
     select, button {
       padding: 0.7em;
@@ -43,20 +44,6 @@
     .share-buttons button {
       background: #d0eaff;
     }
-    .line-explanation {
-      background-color: #fff3f0;
-      margin-top: 1rem;
-      padding: 1rem;
-      border-radius: 1rem;
-      text-align: left;
-    }
-    .line-explanation h3 {
-      color: #4a7ebb;
-      margin-bottom: 0.5rem;
-    }
-    .line-explanation p {
-      margin: 0.3rem 0 1rem;
-    }
   </style>
 </head>
 <body>
@@ -72,130 +59,87 @@
     <option value="all">全部自動診断</option>
   </select>
   <br>
-  <button onclick="enumerateCameras()">📷 カメラを起動</button>
-  <button onclick="switchCamera()">🔁 カメラ切替</button>
+  <button onclick="startCamera()">カメラを起動</button>
+  <button onclick="switchCamera()">カメラ切替</button>
   <br>
   <video id="video" autoplay playsinline></video>
   <br>
   <button onclick="takePhoto()">📸 シャッター</button>
   <canvas id="canvas" style="display:none;"></canvas>
-  <canvas id="lineCanvas" style="display:none;"></canvas>
   <div id="results"></div>
-
-  <div class="line-explanation">
-    <h3>✋ 主な手相の線の意味</h3>
-    <p><strong>感情線：</strong>恋愛傾向や感受性を表します。長くてはっきりしていれば情熱的な性格。</p>
-    <p><strong>頭脳線：</strong>考え方や知性、仕事の向き不向きを示します。曲線的なら感性重視、直線的なら論理的。</p>
-    <p><strong>生命線：</strong>体力や健康状態、バイタリティの象徴。長く濃ければエネルギッシュ！</p>
-  </div>
-
   <div class="share-buttons">
     <button onclick="shareLine()">LINEでシェア</button>
     <button onclick="shareInsta()">インスタで送る</button>
   </div>
-
-  <script async src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
   <script>
     let stream;
-    let devices = [];
-    let currentDeviceIndex = 0;
-    const videoElement = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const lineCanvas = document.getElementById('lineCanvas');
+    let usingFront = false;
 
-    async function enumerateCameras() {
-      const allDevices = await navigator.mediaDevices.enumerateDevices();
-      devices = allDevices.filter(d => d.kind === 'videoinput');
-      const backCam = devices.find(d => d.label.toLowerCase().includes('back')) || devices[0];
-      currentDeviceIndex = devices.indexOf(backCam);
-      startCameraWithDevice(backCam.deviceId);
-    }
-
-    async function startCameraWithDevice(deviceId) {
+    async function startCamera() {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
-
       const constraints = {
-        video: { deviceId: { exact: deviceId } }
+        video: {
+          facingMode: usingFront ? 'user' : 'environment'
+        }
       };
-
       stream = await navigator.mediaDevices.getUserMedia(constraints);
-      videoElement.srcObject = stream;
-
-      const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-      hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.7,
-        minTrackingConfidence: 0.7
-      });
-      hands.onResults(onResults);
-
-      const camera = new Camera(videoElement, {
-        onFrame: async () => {
-          await hands.send({ image: videoElement });
-        },
-        width: 640,
-        height: 480
-      });
-      camera.start();
+      document.getElementById('video').srcObject = stream;
     }
 
     function switchCamera() {
-      if (devices.length === 0) return;
-      currentDeviceIndex = (currentDeviceIndex + 1) % devices.length;
-      const nextDeviceId = devices[currentDeviceIndex].deviceId;
-      startCameraWithDevice(nextDeviceId);
+      usingFront = !usingFront;
+      startCamera();
     }
 
     function takePhoto() {
-      canvas.width = videoElement.videoWidth;
-      canvas.height = videoElement.videoHeight;
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoElement, 0, 0);
+      ctx.drawImage(video, 0, 0);
+      const imageData = canvas.toDataURL();
+      analyzePalm(canvas);
       new Audio('camera-shutter.mp3').play();
-      setTimeout(() => detectPalmLines(), 500);
     }
 
-    function detectPalmLines() {
-      lineCanvas.width = canvas.width;
-      lineCanvas.height = canvas.height;
-      let src = cv.imread(canvas);
-      let dst = new cv.Mat();
-      cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY);
-      cv.GaussianBlur(src, src, new cv.Size(5, 5), 0, 0);
-      cv.Canny(src, dst, 50, 150, 3, false);
-      cv.imshow("lineCanvas", dst);
+    async function analyzePalm(canvas) {
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<p>診断中...少しお待ちください</p>';
 
-      document.getElementById('results').innerHTML += '<p>手の線を検出しました（感情線・頭脳線・生命線）</p>';
-      const dataURL = lineCanvas.toDataURL();
-      document.getElementById('results').innerHTML += `<img src="${dataURL}" alt="線検出画像">`;
+      const genre = document.getElementById('genre').value;
+      if (!genre) {
+        alert('最初にジャンルを選んでください！');
+        return;
+      }
 
-      src.delete();
-      dst.delete();
-    }
+      // ダミー結果生成（本実装ではAIモデルやMediaPipe/OPENCVで実測）
+      const genreResults = {
+        romance: ['情熱的で直感派', '控えめで思慮深い', '感情豊かで表現上手'],
+        work: ['論理的で戦略家タイプ', '柔軟でひらめき型', '安定志向で努力家'],
+        money: ['金運上昇中', '計画的に貯蓄するタイプ', '投資センスあり'],
+        health: ['健康体そのもの', '無理しすぎ注意', 'バランス命'],
+        personality: ['おっとり平和主義', '好奇心旺盛な探求者', '誠実でまじめ']
+      };
 
-    function onResults(results) {
-      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
-      const hand = results.multiHandLandmarks[0];
-      let extendedFingers = 0;
-      const fingerTips = [8, 12, 16, 20];
-
-      fingerTips.forEach((tip, idx) => {
-        const mcp = hand[tip - 2];
-        const pip = hand[tip - 1];
-        if (hand[tip].y < pip.y && pip.y < mcp.y) {
-          extendedFingers++;
+      let final = '';
+      if (genre === 'all') {
+        for (const key in genreResults) {
+          const rand = Math.floor(Math.random() * genreResults[key].length);
+          final += `<p><strong>${key.toUpperCase()}：</strong>${genreResults[key][rand]}</p>`;
         }
-      });
+      } else {
+        const rand = Math.floor(Math.random() * genreResults[genre].length);
+        final = `<p>${genreResults[genre][rand]}</p>`;
+      }
 
-      if (hand[4].x < hand[3].x) extendedFingers++;
-      document.getElementById('results').innerHTML = `<p>指の本数検出：${extendedFingers}本</p>`;
+      resultsDiv.innerHTML = `<h2>診断結果</h2>${final}`;
     }
 
     function shareLine() {
@@ -206,10 +150,6 @@
 
     function shareInsta() {
       alert("インスタDMはこの画面のスクショを送ってみてね💬");
-    }
-
-    function onOpenCvReady() {
-      console.log('OpenCV.js is ready');
     }
   </script>
 </body>
