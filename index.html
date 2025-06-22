@@ -70,14 +70,13 @@
     <button onclick="shareLine()">LINEでシェア</button>
     <button onclick="shareInsta()">インスタで送る</button>
   </div>
-
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
   <script>
     let stream;
     let usingFront = false;
-    const videoElement = document.getElementById('video');
 
     async function startCamera() {
       if (stream) {
@@ -89,26 +88,7 @@
         }
       };
       stream = await navigator.mediaDevices.getUserMedia(constraints);
-      videoElement.srcObject = stream;
-
-      // MediaPipe Hands セットアップ
-      const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-      hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.7,
-        minTrackingConfidence: 0.7
-      });
-      hands.onResults(onResults);
-
-      const camera = new Camera(videoElement, {
-        onFrame: async () => {
-          await hands.send({image: videoElement});
-        },
-        width: 640,
-        height: 480
-      });
-      camera.start();
+      document.getElementById('video').srcObject = stream;
     }
 
     function switchCamera() {
@@ -117,33 +97,48 @@
     }
 
     function takePhoto() {
+      const video = document.getElementById('video');
       const canvas = document.getElementById('canvas');
-      canvas.width = videoElement.videoWidth;
-      canvas.height = videoElement.videoHeight;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoElement, 0, 0);
+      ctx.drawImage(video, 0, 0);
+      const imageData = canvas.toDataURL();
+      analyzePalm(canvas);
       new Audio('camera-shutter.mp3').play();
     }
 
-    function onResults(results) {
-      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+    async function analyzePalm(canvas) {
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<p>診断中...少しお待ちください</p>';
 
-      const hand = results.multiHandLandmarks[0];
-      let extendedFingers = 0;
-      const fingerTips = [8, 12, 16, 20];
+      const genre = document.getElementById('genre').value;
+      if (!genre) {
+        alert('最初にジャンルを選んでください！');
+        return;
+      }
 
-      fingerTips.forEach((tip, idx) => {
-        const mcp = hand[tip - 2];
-        const pip = hand[tip - 1];
-        if (hand[tip].y < pip.y && pip.y < mcp.y) {
-          extendedFingers++;
+      // ダミー結果生成（本実装ではAIモデルやMediaPipe/OPENCVで実測）
+      const genreResults = {
+        romance: ['情熱的で直感派', '控えめで思慮深い', '感情豊かで表現上手'],
+        work: ['論理的で戦略家タイプ', '柔軟でひらめき型', '安定志向で努力家'],
+        money: ['金運上昇中', '計画的に貯蓄するタイプ', '投資センスあり'],
+        health: ['健康体そのもの', '無理しすぎ注意', 'バランス命'],
+        personality: ['おっとり平和主義', '好奇心旺盛な探求者', '誠実でまじめ']
+      };
+
+      let final = '';
+      if (genre === 'all') {
+        for (const key in genreResults) {
+          const rand = Math.floor(Math.random() * genreResults[key].length);
+          final += `<p><strong>${key.toUpperCase()}：</strong>${genreResults[key][rand]}</p>`;
         }
-      });
+      } else {
+        const rand = Math.floor(Math.random() * genreResults[genre].length);
+        final = `<p>${genreResults[genre][rand]}</p>`;
+      }
 
-      // 親指判定（x軸で検出）
-      if (hand[4].x < hand[3].x) extendedFingers++;
-
-      document.getElementById('results').innerHTML = `<p>指の本数検出：${extendedFingers}本</p>`;
+      resultsDiv.innerHTML = `<h2>診断結果</h2>${final}`;
     }
 
     function shareLine() {
