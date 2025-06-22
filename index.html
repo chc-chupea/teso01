@@ -1,343 +1,67 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>手相診断アプリ（線タップ解説付き）</title>
+  <meta charset="UTF-8">
+  <title>手相カメラ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
-      font-family: "Rounded Mplus 1c", "Hiragino Sans", sans-serif;
-      background: #f0f4f8;
-      color: #333;
+      background-color: #e0f7fa;
       text-align: center;
-      padding: 1rem;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
     }
-    h1 {
-      font-size: 1.8rem;
-      color: #4a7ebb;
-    }
-    select, button {
-      padding: 0.7em;
-      font-size: 1rem;
-      margin: 1em;
-      border-radius: 1em;
-      border: none;
-      background: #e6efff;
-      color: #333;
-      cursor: pointer;
-    }
-    video, canvas, img {
-      max-width: 100%;
-      border-radius: 1rem;
-      margin-top: 1rem;
-    }
-    #results {
-      margin-top: 1em;
-      padding: 1em;
-      background: #ffffff;
-      border-radius: 1rem;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      user-select: none;
-    }
-    .share-buttons {
-      margin-top: 1em;
-    }
-    .share-buttons button {
-      background: #d0eaff;
-      cursor: pointer;
-    }
-    .line-explanation {
-      background-color: #fff3f0;
-      margin-top: 1rem;
-      padding: 1rem;
-      border-radius: 1rem;
-      text-align: left;
+    video, canvas {
+      width: 100%;
       max-width: 400px;
-      margin-left: auto;
-      margin-right: auto;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      margin-top: 10px;
     }
-    .line-explanation h3 {
-      color: #4a7ebb;
-      margin-bottom: 0.5rem;
-    }
-    .line-explanation p {
-      margin: 0.3rem 0 1rem;
-    }
-    #lineInfo {
-      margin-top: 1em;
-      color: #555;
-      font-weight: bold;
-      min-height: 2em;
-      user-select: text;
+    button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #4dd0e1;
+      border: none;
+      color: white;
+      border-radius: 8px;
     }
   </style>
 </head>
 <body>
-  <h1>ゆるふわ手相診断</h1>
-  <p>ジャンルを選んでください：</p>
-  <select id="genre">
-    <option value="">--ジャンルを選択--</option>
-    <option value="romance">恋愛</option>
-    <option value="work">仕事</option>
-    <option value="money">金運</option>
-    <option value="health">健康</option>
-    <option value="personality">性格</option>
-    <option value="all">全部自動診断</option>
-  </select>
-  <br />
-  <button onclick="enumerateCameras()">📷 カメラを起動</button>
-  <button onclick="switchCamera()">🔁 カメラ切替</button>
-  <br />
+  <h1>手のひらを撮影しよう！</h1>
   <video id="video" autoplay playsinline></video>
-  <br />
-  <button onclick="takePhoto()">📸 シャッター</button>
-
-  <canvas id="canvas" style="display:none;"></canvas>
-  <canvas id="lineCanvas" style="display:none;"></canvas>
-
-  <div id="results">
-    <!-- 検出結果画像や説明文が入る -->
-  </div>
-  <div id="lineInfo"></div>
-
-  <div class="line-explanation">
-    <h3>✋ 主な手相の線の意味</h3>
-    <p><strong>感情線：</strong>恋愛傾向や感受性を表します。長くてはっきりしていれば情熱的な性格。</p>
-    <p><strong>頭脳線：</strong>考え方や知性、仕事の向き不向きを示します。曲線的なら感性重視、直線的なら論理的。</p>
-    <p><strong>生命線：</strong>体力や健康状態、バイタリティの象徴。長く濃ければエネルギッシュ！</p>
-  </div>
-
-  <div class="share-buttons">
-    <button onclick="shareLine()">LINEでシェア</button>
-    <button onclick="shareInsta()">インスタで送る</button>
-  </div>
-
-  <!-- ライブラリ読み込み -->
-  <script async src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script async src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
+  <canvas id="canvas" style="display: none;"></canvas>
+  <br>
+  <button id="capture">📸 撮影する</button>
 
   <script>
-    let stream;
-    let devices = [];
-    let currentDeviceIndex = 0;
-    const videoElement = document.getElementById('video');
+    const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
-    const lineCanvas = document.getElementById('lineCanvas');
-    let detectedLines = []; // 線情報格納
+    const captureButton = document.getElementById('capture');
 
-    async function enumerateCameras() {
-      const allDevices = await navigator.mediaDevices.enumerateDevices();
-      devices = allDevices.filter(d => d.kind === 'videoinput');
-      const backCam = devices.find(d => d.label.toLowerCase().includes('back')) || devices[0];
-      currentDeviceIndex = devices.indexOf(backCam);
-      startCameraWithDevice(backCam.deviceId);
-    }
+    // カメラ起動（外カメラ優先）
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { exact: "environment" } }, // 外カメラ指定
+      audio: false
+    }).then(stream => {
+      video.srcObject = stream;
+    }).catch(err => {
+      alert("カメラの起動に失敗しました：" + err.message);
+    });
 
-    async function startCameraWithDevice(deviceId) {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-
-      const constraints = {
-        video: { deviceId: { exact: deviceId } }
-      };
-
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-      videoElement.srcObject = stream;
-
-      const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-      hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.7,
-        minTrackingConfidence: 0.7
-      });
-      hands.onResults(onResults);
-
-      const camera = new Camera(videoElement, {
-        onFrame: async () => {
-          await hands.send({ image: videoElement });
-        },
-        width: 640,
-        height: 480
-      });
-      camera.start();
-    }
-
-    function switchCamera() {
-      if (devices.length === 0) return;
-      currentDeviceIndex = (currentDeviceIndex + 1) % devices.length;
-      const nextDeviceId = devices[currentDeviceIndex].deviceId;
-      startCameraWithDevice(nextDeviceId);
-    }
-
-    function takePhoto() {
-      canvas.width = videoElement.videoWidth;
-      canvas.height = videoElement.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoElement, 0, 0);
-      new Audio('camera-shutter.mp3').play();
-      setTimeout(() => detectPalmLines(), 500);
-    }
-
-    // 線を検出し分類＆描画し、線情報を保持。線をタップ判定可能に。
-    function detectPalmLines() {
-      detectedLines = []; // 初期化
-
-      lineCanvas.width = canvas.width;
-      lineCanvas.height = canvas.height;
-
-      let src = cv.imread(canvas);
-      let gray = new cv.Mat();
-      let blur = new cv.Mat();
-      let edges = new cv.Mat();
-      let colorDst = new cv.Mat();
-
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
-      cv.Canny(blur, edges, 50, 150, 3);
-
-      cv.cvtColor(edges, colorDst, cv.COLOR_GRAY2RGBA);
-
-      let lines = new cv.Mat();
-      cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 50, 50, 10);
-
-      for (let i = 0; i < lines.rows; ++i) {
-        let [x1, y1, x2, y2] = lines.intPtr(i);
-        let midY = (y1 + y2) / 2;
-
-        let color;
-        let type;
-        if (midY < src.rows * 0.33) {
-          color = new cv.Scalar(255, 0, 0, 255); // 赤：感情線
-          type = "感情線";
-        } else if (midY < src.rows * 0.66) {
-          color = new cv.Scalar(0, 255, 0, 255); // 緑：頭脳線
-          type = "頭脳線";
-        } else {
-          color = new cv.Scalar(0, 0, 255, 255); // 青：生命線
-          type = "生命線";
-        }
-
-        detectedLines.push({x1, y1, x2, y2, type});
-
-        cv.line(colorDst, new cv.Point(x1, y1), new cv.Point(x2, y2), color, 2);
-      }
-
-      cv.imshow("lineCanvas", colorDst);
-
-      const dataURL = lineCanvas.toDataURL();
-      document.getElementById('results').innerHTML = `
-        <p>🔍 色付きで線を分類しました。線をタップして説明を見てね！</p>
-        <img id="lineImage" src="${dataURL}" alt="分類結果" style="max-width:100%;border-radius:1rem;touch-action:none;">
-      `;
-      document.getElementById('lineInfo').textContent = "";
-
-      // メモリ解放
-      src.delete(); gray.delete(); blur.delete();
-      edges.delete(); lines.delete(); colorDst.delete();
-
-      setupLineClickEvent();
-    }
-
-    // canvas上の線をクリック判定し解説表示
-    function setupLineClickEvent() {
-      const img = document.getElementById('lineImage');
-      const info = document.getElementById('lineInfo');
-
-      img.onclick = function(event) {
-        const rect = img.getBoundingClientRect();
-        const scaleX = img.naturalWidth / rect.width;
-        const scaleY = img.naturalHeight / rect.height;
-
-        const clickX = (event.clientX - rect.left) * scaleX;
-        const clickY = (event.clientY - rect.top) * scaleY;
-
-        const maxDistance = 10; // px
-        let found = null;
-
-        for (const line of detectedLines) {
-          const dist = pointLineDistance(clickX, clickY, line);
-          if (dist < maxDistance) {
-            found = line;
-            break;
-          }
-        }
-
-        if (found) {
-          info.textContent = `これは「${found.type}」です。${lineDescription(found.type)}`;
-        } else {
-          info.textContent = '線の近くをタップしてください。';
-        }
-      };
-    }
-
-    // 点と線の距離計算（線分上の最近点までの距離）
-    function pointLineDistance(x, y, line) {
-      const {x1, y1, x2, y2} = line;
-      const A = x - x1;
-      const B = y - y1;
-      const C = x2 - x1;
-      const D = y2 - y1;
-
-      const dot = A * C + B * D;
-      const len_sq = C * C + D * D;
-      let param = -1;
-      if (len_sq !== 0) param = dot / len_sq;
-
-      let xx, yy;
-
-      if (param < 0) {
-        xx = x1;
-        yy = y1;
-      } else if (param > 1) {
-        xx = x2;
-        yy = y2;
-      } else {
-        xx = x1 + param * C;
-        yy = y1 + param * D;
-      }
-
-      const dx = x - xx;
-      const dy = y - yy;
-      return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    // 線の種類ごとの説明文
-    function lineDescription(type) {
-      switch(type) {
-        case "感情線":
-          return "恋愛傾向や感受性を表す線です。長くはっきりしていると情熱的な性格。";
-        case "頭脳線":
-          return "考え方や知性を示す線。曲線的なら感性重視、直線的なら論理的。";
-        case "生命線":
-          return "体力や健康状態を表します。長く濃いとバイタリティあり。";
-        default:
-          return "";
-      }
-    }
-
-    // 以下は既存の機能（指検出やシェア機能など）と組み合わせてください
-
-    function onResults(results) {
-      // Mediapipe手検出処理（指本数カウント等）もここで可能
-    }
-
-    function shareLine() {
-      const url = encodeURIComponent(window.location.href);
-      const text = encodeURIComponent("合コンで使える！あなたの手相診断結果はこちら→");
-      window.open(`https://line.me/R/msg/text/?${text}%20${url}`);
-    }
-
-    function shareInsta() {
-      alert("インスタDMはこの画面のスクショを送ってみてね💬");
-    }
-
-    function onOpenCvReady() {
-      console.log('OpenCV.js is ready');
-    }
+    // 撮影処理
+    captureButton.addEventListener('click', () => {
+      const context = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      video.style.display = 'none';
+      canvas.style.display = 'block';
+      captureButton.textContent = "🔄 撮り直す";
+    });
   </script>
 </body>
 </html>
