@@ -1,15 +1,14 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <title>✨手相診断✨</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <title>✨合コン手相診断✨</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
   <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
-
   <style>
     body {
       font-family: 'Noto Sans JP', sans-serif;
@@ -20,17 +19,6 @@
       max-width: 480px;
       margin: auto;
     }
-    #video {
-      width: 90%;
-      max-width: 400px;
-      border-radius: 12px;
-      margin: 10px auto;
-      display: block;
-      background: #222;
-    }
-    canvas {
-      display: none;
-    }
     .button {
       background-color: #ff69b4;
       color: #fff;
@@ -39,173 +27,88 @@
       margin: 15px 10px;
       cursor: pointer;
       font-size: 1.1em;
-      user-select: none;
       border: none;
       transition: background-color 0.3s ease;
     }
-    .button:hover {
-      background-color: #e0569f;
-    }
-    select {
-      padding: 10px;
-      border-radius: 10px;
-      margin: 10px 5px;
-      font-size: 1em;
-      min-width: 160px;
-    }
-    #result {
-      background-color: #fffafc;
-      border-radius: 12px;
-      padding: 20px;
-      border: 2px dashed #d63384;
-      font-size: 1.1em;
-      margin-top: 15px;
-      line-height: 1.5em;
-      white-space: pre-wrap;
-      text-align: left;
-      min-height: 140px;
-    }
-    #shareSection {
-      margin-top: 20px;
-    }
-    #shareText {
-      font-size: 0.9em;
-      color: #666;
-      margin-bottom: 10px;
-      padding: 0 10px;
-      text-align: center;
-    }
-    .share-buttons {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-    .share-buttons button {
-      background-color: #3b5998;
-      border: none;
-      border-radius: 8px;
-      color: white;
-      font-weight: bold;
-      padding: 10px 16px;
-      cursor: pointer;
-      user-select: none;
-      transition: background-color 0.3s ease;
-      font-size: 1em;
-      min-width: 140px;
-    }
-    .share-buttons button.instagram {
-      background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285aeb 90%);
-    }
-    .share-buttons button.instagram:hover {
-      opacity: 0.9;
-    }
-    .share-buttons button.line {
-      background-color: #00c300;
-    }
-    .share-buttons button.line:hover {
-      opacity: 0.9;
+    .button[disabled] {
+      background-color: #ccc;
+      cursor: not-allowed;
     }
   </style>
 </head>
 <body>
-  <h2>📷 手のひらスマホ診断 ✨</h2>
-  <div>
-    <label for="handSelect">📌 手の選択：</label>
-    <select id="handSelect">
-      <option value="">-- 左右の手を選んでね --</option>
-      <option value="Left">左手</option>
-      <option value="Right">右手</option>
-    </select>
-  </div>
-  <div>
-    <label for="genreSelect">📌 ジャンル選択：</label>
-    <select id="genreSelect">
-      <option value="">-- ジャンルを選んでね --</option>
-      <option value="love">恋愛</option>
-      <option value="work">仕事</option>
-      <option value="money">金運</option>
-      <option value="health">健康</option>
-      <option value="personality">性格</option>
-      <option value="all">全部診断</option>
-    </select>
-  </div>
+  <h2>📷 合コン 手のひらスマホ診断 ✨</h2>
+  <label for="handSelect">📌 手の選択：</label>
+  <select id="handSelect">
+    <option value="">-- 左右の手を選んでね --</option>
+    <option value="Left">左手（素質）</option>
+    <option value="Right">右手（努力・今）</option>
+  </select>
+  <br>
+  <label for="genreSelect">📌 ジャンル選択：</label>
+  <select id="genreSelect">
+    <option value="">-- ジャンルを選んでね --</option>
+    <option value="love">恋愛</option>
+    <option value="work">仕事</option>
+    <option value="money">金運</option>
+    <option value="health">健康</option>
+    <option value="personality">性格</option>
+    <option value="all">全部診断</option>
+  </select>
+  <br>
   <video id="video" autoplay playsinline></video>
-  <canvas id="output" width="640" height="480"></canvas>
-  <div>
-    <button class="button" id="captureButton">📷 撮影＋診断！</button>
-  </div>
-  <div id="result">👉 結果がここに表示されます ✨</div>
-  <section id="shareSection" style="display:none;">
-    <div id="shareText">
-      仲良しに<br><strong>この診断結果をシェアしよう！</strong><br>
-      気軽に送って、仲良くなっちゃおう💖
-    </div>
-    <div class="share-buttons">
-      <button class="instagram" id="instaShareBtn">📸 インスタに送る</button>
-      <button class="line" id="lineShareBtn">💬 LINEで送る</button>
-    </div>
-  </section>
+  <canvas id="output" width="640" height="480" style="display:none;"></canvas>
+  <br>
+  <button id="captureButton" class="button" disabled>📷 撮影＋診断！</button>
+  <div id="result" style="white-space: pre-wrap; margin-top: 1em; background: #fff; border: 1px dashed #ff69b4; padding: 1em; border-radius: 10px;">👉 結果がここに表示されます ✨</div>
 
   <script>
-    const leftCommentPrefix = "🔮【左手】生まれ持った素質";
-    const rightCommentPrefix = "🚀【右手】努力や現在の傾向";
+    let palmistryComments = {};
+    const captureButton = document.getElementById('captureButton');
 
-    function generateComments(prefix) {
-      const result = {};
-      const genres = ['love', 'work', 'money', 'health', 'personality', 'all'];
-      genres.forEach((genre) => {
-        result[genre] = Array.from({ length: 50 }, (_, i) => `${prefix}${genre}Lv${i + 1}：診断コメント ${i + 1}`);
+    // JSONデータの読み込み
+    fetch('./comments.json')
+      .then(response => {
+        if (!response.ok) throw new Error('読み込みエラー');
+        return response.json();
+      })
+      .then(data => {
+        palmistryComments = data;
+        captureButton.disabled = false;
+        console.log('✅ コメントJSON読み込み完了');
+      })
+      .catch(err => {
+        alert('コメントデータの読み込みに失敗しました。');
+        console.error(err);
       });
-      return result;
+
+    // Utility関数
+    function getSoshiOrGenzaiLabel(hand) {
+      return hand === 'Left' ? '（生まれ持った素質）' : '（今の努力や環境）';
     }
 
-    const palmistryCommentsLeft = generateComments("左手");
-    const palmistryCommentsRight = generateComments("右手");
+    function getResultComment(hand, genre, level) {
+      const base = palmistryComments[genre] || [];
+      return base[level] + `\n（${hand === 'Left' ? '素質診断' : '現在の状態診断'}）`;
+    }
 
-    document.getElementById('captureButton').addEventListener('click', () => {
+    function getFinalResultText(hand, genre, level, comment, extraInfo = '') {
+      return `✨ ${hand} 手${getSoshiOrGenzaiLabel(hand)}の診断 ✨\n\n` +
+             `💖 ジャンル: ${genre}\n🔢 レベル: ${level + 1}/50\n💬 コメント: ${comment}\n${extraInfo}`;
+    }
+
+    // 手相診断処理（簡略版）
+    captureButton.addEventListener('click', () => {
       const hand = document.getElementById('handSelect').value;
       const genre = document.getElementById('genreSelect').value;
-      const resultDiv = document.getElementById('result');
-      const shareSection = document.getElementById('shareSection');
-
       if (!hand || !genre) {
         alert("👉 まずは『左右の手』と『ジャンル』を選んでね！");
         return;
       }
-
-      const isLeft = hand === "Left";
       const level = Math.floor(Math.random() * 50);
-      const comment = isLeft ? palmistryCommentsLeft[genre][level] : palmistryCommentsRight[genre][level];
-      const handMeaning = isLeft
-        ? "左手は、生まれ持った素質を表します。"
-        : "右手は、今の努力や現在の傾向を示します。";
-
-      const resultText = `
-✨ ${hand} 手の診断結果 ✨
-
-🖐️ ${isLeft ? leftCommentPrefix : rightCommentPrefix}
-🔢 レベル: ${level + 1} / 50
-💬 ${comment}
-📖 ${handMeaning}
-
-（※ここに今後、指の本数や線の数、エリア分析を追加可能です）
-      `;
-
-      resultDiv.textContent = resultText;
-      shareSection.style.display = 'block';
-    });
-
-    document.getElementById('instaShareBtn').addEventListener('click', () => {
-      alert("📸 Instagramアプリで診断結果をコピペしてシェアしてね！");
-      window.open('https://www.instagram.com/', '_blank');
-    });
-
-    document.getElementById('lineShareBtn').addEventListener('click', () => {
-      const resultText = document.getElementById('result').textContent;
-      const text = encodeURIComponent(resultText + "\n診断アプリで盛り上がろう✨");
-      const lineUrl = `https://line.me/R/msg/text/?${text}`;
-      window.open(lineUrl, '_blank');
+      const comment = getResultComment(hand, genre, level);
+      const resultText = getFinalResultText(hand, genre, level, comment);
+      document.getElementById('result').textContent = resultText;
     });
   </script>
 </body>
