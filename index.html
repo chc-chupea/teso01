@@ -1,130 +1,212 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>手相診断アプリ（iPhone対応）</title>
+  <meta charset="UTF-8" />
+  <title>✨手相診断✨</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+
   <style>
     body {
-      font-family: sans-serif;
-      background-color: #111;
-      color: #fff;
+      font-family: 'Noto Sans JP', sans-serif;
+      background-color: #fff0f5;
       text-align: center;
-      padding: 1em;
+      color: #333;
+      padding: 10px;
+      max-width: 480px;
+      margin: auto;
     }
-    video, canvas {
+    #video {
       width: 90%;
       max-width: 400px;
-      margin: 1em 0;
-      border-radius: 1em;
+      border-radius: 12px;
+      margin: 10px auto;
+      display: block;
+      background: #222;
     }
-    select, button {
-      font-size: 1.2em;
-      margin: 0.5em;
-      padding: 0.4em 1em;
-      border-radius: 0.5em;
+    canvas {
+      display: none;
+    }
+    .button {
+      background-color: #ff69b4;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 25px;
+      margin: 15px 10px;
+      cursor: pointer;
+      font-size: 1.1em;
+      user-select: none;
+      border: none;
+      transition: background-color 0.3s ease;
+    }
+    .button:hover {
+      background-color: #e0569f;
+    }
+    select {
+      padding: 10px;
+      border-radius: 10px;
+      margin: 10px 5px;
+      font-size: 1em;
+      min-width: 160px;
     }
     #result {
+      background-color: #fffafc;
+      border-radius: 12px;
+      padding: 20px;
+      border: 2px dashed #d63384;
+      font-size: 1.1em;
+      margin-top: 15px;
+      line-height: 1.5em;
       white-space: pre-wrap;
-      margin-top: 1em;
+      text-align: left;
+      min-height: 140px;
+    }
+    #shareSection {
+      margin-top: 20px;
+    }
+    #shareText {
+      font-size: 0.9em;
+      color: #666;
+      margin-bottom: 10px;
+      padding: 0 10px;
+      text-align: center;
+    }
+    .share-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .share-buttons button {
+      background-color: #3b5998;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-weight: bold;
+      padding: 10px 16px;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.3s ease;
+      font-size: 1em;
+      min-width: 140px;
+    }
+    .share-buttons button.instagram {
+      background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285aeb 90%);
+    }
+    .share-buttons button.instagram:hover {
+      opacity: 0.9;
+    }
+    .share-buttons button.line {
+      background-color: #00c300;
+    }
+    .share-buttons button.line:hover {
+      opacity: 0.9;
     }
   </style>
 </head>
 <body>
-  <h1>📷 手相診断アプリ</h1>
-  <video id="camera" autoplay playsinline muted></video>
-  <canvas id="snapshot" style="display:none;"></canvas>
-
+  <h2>📷 手のひらスマホ診断 ✨</h2>
   <div>
-    <select id="genre">
-      <option value="all">全部診断</option>
+    <label for="handSelect">📌 手の選択：</label>
+    <select id="handSelect">
+      <option value="">-- 左右の手を選んでね --</option>
+      <option value="Left">左手</option>
+      <option value="Right">右手</option>
+    </select>
+  </div>
+  <div>
+    <label for="genreSelect">📌 ジャンル選択：</label>
+    <select id="genreSelect">
+      <option value="">-- ジャンルを選んでね --</option>
       <option value="love">恋愛</option>
-      <option value="job">仕事</option>
+      <option value="work">仕事</option>
       <option value="money">金運</option>
       <option value="health">健康</option>
       <option value="personality">性格</option>
+      <option value="all">全部診断</option>
     </select>
-    <button id="startButton">📸 撮影して診断</button>
   </div>
-  <p id="result">診断結果がここに表示されます</p>
-  <button onclick="savePDF()">📄 PDF保存</button>
-  <button onclick="shareLINE()">📲 LINEで共有</button>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="output" width="640" height="480"></canvas>
+  <div>
+    <button class="button" id="captureButton">📷 撮影＋診断！</button>
+  </div>
+  <div id="result">👉 結果がここに表示されます ✨</div>
+  <section id="shareSection" style="display:none;">
+    <div id="shareText">
+      仲良しに<br><strong>この診断結果をシェアしよう！</strong><br>
+      気軽に送って、仲良くなっちゃおう💖
+    </div>
+    <div class="share-buttons">
+      <button class="instagram" id="instaShareBtn">📸 インスタに送る</button>
+      <button class="line" id="lineShareBtn">💬 LINEで送る</button>
+    </div>
+  </section>
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://docs.opencv.org/4.5.5/opencv.js"></script>
   <script>
-    const video = document.getElementById('camera');
-    const canvas = document.getElementById('snapshot');
-    const resultText = document.getElementById('result');
-    const startButton = document.getElementById('startButton');
+    const leftCommentPrefix = "🔮【左手】生まれ持った素質";
+    const rightCommentPrefix = "🚀【右手】努力や現在の傾向";
 
-    async function initCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        video.srcObject = stream;
-      } catch (err) {
-        alert('カメラの使用を許可してください\n設定 → SafariまたはChrome → カメラを許可\n\nエラー内容: ' + err);
+    function generateComments(prefix) {
+      const result = {};
+      const genres = ['love', 'work', 'money', 'health', 'personality', 'all'];
+      genres.forEach((genre) => {
+        result[genre] = Array.from({ length: 50 }, (_, i) => `${prefix}${genre}Lv${i + 1}：診断コメント ${i + 1}`);
+      });
+      return result;
+    }
+
+    const palmistryCommentsLeft = generateComments("左手");
+    const palmistryCommentsRight = generateComments("右手");
+
+    document.getElementById('captureButton').addEventListener('click', () => {
+      const hand = document.getElementById('handSelect').value;
+      const genre = document.getElementById('genreSelect').value;
+      const resultDiv = document.getElementById('result');
+      const shareSection = document.getElementById('shareSection');
+
+      if (!hand || !genre) {
+        alert("👉 まずは『左右の手』と『ジャンル』を選んでね！");
+        return;
       }
-    }
 
-    startButton.addEventListener('click', analyzePalm);
-    window.onload = initCamera;
+      const isLeft = hand === "Left";
+      const level = Math.floor(Math.random() * 50);
+      const comment = isLeft ? palmistryCommentsLeft[genre][level] : palmistryCommentsRight[genre][level];
+      const handMeaning = isLeft
+        ? "左手は、生まれ持った素質を表します。"
+        : "右手は、今の努力や現在の傾向を示します。";
 
-    async function analyzePalm() {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0);
+      const resultText = `
+✨ ${hand} 手の診断結果 ✨
 
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      let src = cv.matFromImageData(imgData);
-      let gray = new cv.Mat();
-      let edges = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      cv.Canny(gray, edges, 50, 150);
+🖐️ ${isLeft ? leftCommentPrefix : rightCommentPrefix}
+🔢 レベル: ${level + 1} / 50
+💬 ${comment}
+📖 ${handMeaning}
 
-      let lineCount = Math.floor(Math.random() * 10 + 10);
-      let fingerCount = Math.floor(Math.random() * 2 + 5);
-      let genre = document.getElementById('genre').value;
-      let evaluation = Math.floor(Math.random() * 20);
-      let comment = generateComment(genre, evaluation);
+（※ここに今後、指の本数や線の数、エリア分析を追加可能です）
+      `;
 
-      resultText.innerText = `🖐️ 指の本数：${fingerCount}\n✏️ 線の数：${lineCount}\n📊 評価：${evaluation + 1}/20\n\n${comment}`;
+      resultDiv.textContent = resultText;
+      shareSection.style.display = 'block';
+    });
 
-      src.delete(); gray.delete(); edges.delete();
-    }
+    document.getElementById('instaShareBtn').addEventListener('click', () => {
+      alert("📸 Instagramアプリで診断結果をコピペしてシェアしてね！");
+      window.open('https://www.instagram.com/', '_blank');
+    });
 
-    function generateComment(genre, score) {
-      const comments = {
-        love: [...Array(20)].map((_, i) => `💘 恋愛運Lv${i+1}：${["恋の直感が冴えわたる星の下☆","恋の駆け引きは苦手かも？","誠実な想いが届くタイプ","愛情深く尽くすロマン派","やや奥手だけど情熱的","恋は追うより追われたい派","共感力で恋愛成功率UP","少し浮気心が出ちゃうかも？","タイミング次第でモテ期到来","気持ちの切り替えが上手","恋人に尽くしすぎ注意！？","恋愛より友情を重視タイプ","やさしさで包み込む愛の人","恋愛運は安定してます◎","ちょっとミステリアスな魅力","笑顔で好印象、モテ素質あり","付き合うと長続きするタイプ","恋に奥手でも芯はブレない","映画のような恋に憧れる派","恋のチャンスは案外すぐそこ♪"][i]}`),
-        job: [...Array(20)].map((_, i) => `💼 仕事運Lv${i+1}：${["堅実で信頼される実力派","一発逆転型のひらめきあり","丁寧で慎重な取り組み","チームに欠かせない存在","気配りできるムードメーカー","独立心旺盛なリーダー気質","挑戦を恐れないチャレンジャー","器用貧乏になりがち注意","地味に結果を出すタイプ","ピンチをチャンスに変える力","こだわり強めの職人気質","発想豊かで創造性高め","マルチタスクに向いてる","調整役に最適なバランサー","無駄を嫌う効率重視派","人間関係で少し疲れやすいかも","出世コースに乗りやすい","責任感バッチリな信頼の星","気分屋だけど爆発力あり","職場の癒し系存在♪"][i]}`),
-        money: [...Array(20)].map((_, i) => `💰 金運Lv${i+1}：${["お金との縁が濃いタイプ","出費が多くても回収力あり","財布に優しい生活が得意","貯金がコツコツできる","金運アップの波に乗ってる","投資センス光るかも！？","金銭感覚がしっかりしてる","ギャンブル運は波あり","無駄遣いに注意のサイン","急な臨時収入が期待できる","副業に向いているタイプ","お金で人を助ける器あり","セールを見逃さない達人","節約術が得意な生活派","浪費癖にちょっと注意","お金はあとからついてくる","大金よりも安定志向","人からの援助に恵まれる","堅実さが将来の鍵","実は玉の輿運！？"][i]}`),
-        health: [...Array(20)].map((_, i) => `🏥 健康運Lv${i+1}：${["体力バッチリ元気ハツラツ！","ちょっと無理しがちな傾向","よく寝ると運気アップ","健康志向な生活スタイル","ストレス発散が上手","運動不足になりやすいかも","食生活を見直すと◎","自律神経に注意してね","風邪に負けない強さあり","自然の中でリフレッシュ推奨","季節の変わり目に注意","肌トラブルは水分補給で回避","内臓に優しい食事を","不摂生は溜め込まないで","歯や目のケアを忘れずに","冷え対策が吉","無理せず休むことも大事","不調サインに敏感であれ","健康運はこれから右肩上がり","ウォーキングが開運アクション"][i]}`),
-        personality: [...Array(20)].map((_, i) => `🧠 性格診断Lv${i+1}：${["人当たりの良い優しさNo.1","ちょっと頑固だけど信念強い","空気を読むのが得意","細かいことに気づく天才","一人の時間を大切にする","聞き上手で頼られるタイプ","芯が強くてブレない性格","自由人だけど魅力的","ふわっとしてて癒し系","熱しやすく冷めやすい一面も","負けず嫌いな努力家","感受性豊かでロマンチスト","バランス感覚が秀逸","話し方にユーモアあり","いつもニコニコ平和主義","目標達成型ストイック派","臨機応変な柔軟派","ときに毒舌なツッコミ担当","気配り上手で裏ボス感あり","場を明るくする太陽みたいな人"][i]}`)
-      };
-
-      if (genre === 'all') {
-        return Object.keys(comments).map(key => comments[key][score]).join('\n');
-      } else {
-        return comments[genre][score];
-      }
-    }
-
-    async function savePDF() {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-      doc.setFontSize(14);
-      doc.text("手相診断レポート", 10, 10);
-      doc.text(resultText.innerText, 10, 20);
-      doc.save("palm_result.pdf");
-    }
-
-    function shareLINE() {
-      const msg = encodeURIComponent("\n【手相診断結果】\n" + resultText.innerText);
-      const url = `https://line.me/R/msg/text/?${msg}`;
-      window.open(url);
-    }
+    document.getElementById('lineShareBtn').addEventListener('click', () => {
+      const resultText = document.getElementById('result').textContent;
+      const text = encodeURIComponent(resultText + "\n診断アプリで盛り上がろう✨");
+      const lineUrl = `https://line.me/R/msg/text/?${text}`;
+      window.open(lineUrl, '_blank');
+    });
   </script>
 </body>
 </html>
