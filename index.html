@@ -6,221 +6,149 @@
   <title>手相診断アプリ</title>
   <style>
     body {
-      font-family: sans-serif;
-      background-color: #111;
-      color: #fff;
+      font-family: "Rounded Mplus 1c", "Hiragino Sans", sans-serif;
+      background: #f0f4f8;
+      color: #333;
       text-align: center;
-      padding: 1em;
+      padding: 1rem;
     }
-    video, canvas {
-      width: 90%;
-      max-width: 400px;
-      margin: 1em 0;
+    h1 {
+      font-size: 1.8rem;
+      color: #4a7ebB;
     }
     select, button {
-      font-size: 1.2em;
-      margin: 0.5em;
+      padding: 0.7em;
+      font-size: 1rem;
+      margin: 1em;
+      border-radius: 1em;
+      border: none;
+      background: #e6efff;
+      color: #333;
     }
-    #result {
-      white-space: pre-wrap;
+    video, canvas, img {
+      max-width: 100%;
+      border-radius: 1rem;
+      margin-top: 1rem;
+    }
+    #results {
       margin-top: 1em;
+      padding: 1em;
+      background: #ffffff;
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .share-buttons {
+      margin-top: 1em;
+    }
+    .share-buttons button {
+      background: #d0eaff;
     }
   </style>
 </head>
 <body>
-  <h1>📷 手相診断アプリ</h1>
-  <video id="camera" autoplay playsinline></video>
-  <canvas id="snapshot" style="display:none;"></canvas>
-
-  <div>
-    <select id="genre">
-      <option value="all">全部診断</option>
-      <option value="love">恋愛</option>
-      <option value="job">仕事</option>
-      <option value="money">金運</option>
-      <option value="health">健康</option>
-      <option value="personality">性格</option>
-    </select>
-    <button onclick="analyzePalm()">📸 撮影して診断</button>
+  <h1>ゆるふわ手相診断</h1>
+  <p>ジャンルを選んでください：</p>
+  <select id="genre">
+    <option value="">--ジャンルを選択--</option>
+    <option value="romance">恋愛</option>
+    <option value="work">仕事</option>
+    <option value="money">金運</option>
+    <option value="health">健康</option>
+    <option value="personality">性格</option>
+    <option value="all">全部自動診断</option>
+  </select>
+  <br>
+  <button onclick="startCamera()">カメラを起動</button>
+  <button onclick="switchCamera()">カメラ切替</button>
+  <br>
+  <video id="video" autoplay playsinline></video>
+  <br>
+  <button onclick="takePhoto()">📸 シャッター</button>
+  <canvas id="canvas" style="display:none;"></canvas>
+  <div id="results"></div>
+  <div class="share-buttons">
+    <button onclick="shareLine()">LINEでシェア</button>
+    <button onclick="shareInsta()">インスタで送る</button>
   </div>
-  <p id="result">診断結果がここに表示されます</p>
-  <button onclick="savePDF()">📄 PDF保存</button>
-  <button onclick="shareLINE()">📲 LINEで共有</button>
-
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://docs.opencv.org/4.5.5/opencv.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
   <script>
-    const video = document.getElementById('camera');
-    const canvas = document.getElementById('snapshot');
-    const resultText = document.getElementById('result');
+    let stream;
+    let usingFront = false;
 
-    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-      video.srcObject = stream;
-    });
+    async function startCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      const constraints = {
+        video: {
+          facingMode: usingFront ? 'user' : 'environment'
+        }
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      document.getElementById('video').srcObject = stream;
+    }
 
-    async function analyzePalm() {
+    function switchCamera() {
+      usingFront = !usingFront;
+      startCamera();
+    }
+
+    function takePhoto() {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0);
-
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      let src = cv.matFromImageData(imgData);
-      let gray = new cv.Mat();
-      let edges = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      cv.Canny(gray, edges, 50, 150);
-
-      let lineCount = Math.floor(Math.random() * 10 + 10);
-      let fingerCount = Math.floor(Math.random() * 2 + 5);
-      let genre = document.getElementById('genre').value;
-      let evaluation = Math.floor(Math.random() * 20);
-      let comment = generateComment(genre, evaluation);
-
-      resultText.innerText = `🖐️ 指の本数：${fingerCount}\n✏️ 線の数：${lineCount}\n📊 評価：${evaluation + 1}/20\n\n${comment}`;
-
-      src.delete(); gray.delete(); edges.delete();
+      const imageData = canvas.toDataURL();
+      analyzePalm(canvas);
+      new Audio('camera-shutter.mp3').play();
     }
 
-    function generateComment(genre, score) {
-      const comments = {
-        love: Array.from({ length: 20 }, (_, i) => `💘 恋愛運Lv${i + 1}：${[
-          "恋の直感が冴えわたる星の下☆",
-          "恋の駆け引きは苦手かも？",
-          "誠実な想いが届くタイプ",
-          "愛情深く尽くすロマン派",
-          "やや奥手だけど情熱的",
-          "恋は追うより追われたい派",
-          "共感力で恋愛成功率UP",
-          "少し浮気心が出ちゃうかも？",
-          "タイミング次第でモテ期到来",
-          "気持ちの切り替えが上手",
-          "恋人に尽くしすぎ注意！？",
-          "恋愛より友情を重視タイプ",
-          "やさしさで包み込む愛の人",
-          "恋愛運は安定してます◎",
-          "ちょっとミステリアスな魅力",
-          "笑顔で好印象、モテ素質あり",
-          "付き合うと長続きするタイプ",
-          "恋に奥手でも芯はブレない",
-          "映画のような恋に憧れる派",
-          "恋のチャンスは案外すぐそこ♪"
-        ][i]}`),
+    async function analyzePalm(canvas) {
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<p>診断中...少しお待ちください</p>';
 
-        job: Array.from({ length: 20 }, (_, i) => `💼 仕事運Lv${i + 1}：${[
-          "堅実で信頼される実力派",
-          "一発逆転型のひらめきあり",
-          "丁寧で慎重な取り組み",
-          "チームに欠かせない存在",
-          "気配りできるムードメーカー",
-          "独立心旺盛なリーダー気質",
-          "挑戦を恐れないチャレンジャー",
-          "器用貧乏になりがち注意",
-          "地味に結果を出すタイプ",
-          "ピンチをチャンスに変える力",
-          "こだわり強めの職人気質",
-          "発想豊かで創造性高め",
-          "マルチタスクに向いてる",
-          "調整役に最適なバランサー",
-          "無駄を嫌う効率重視派",
-          "人間関係で少し疲れやすいかも",
-          "出世コースに乗りやすい",
-          "責任感バッチリな信頼の星",
-          "気分屋だけど爆発力あり",
-          "職場の癒し系存在♪"
-        ][i]}`),
+      const genre = document.getElementById('genre').value;
+      if (!genre) {
+        alert('最初にジャンルを選んでください！');
+        return;
+      }
 
-        money: Array.from({ length: 20 }, (_, i) => `💰 金運Lv${i + 1}：${[
-          "お金との縁が濃いタイプ",
-          "出費が多くても回収力あり",
-          "財布に優しい生活が得意",
-          "貯金がコツコツできる",
-          "金運アップの波に乗ってる",
-          "投資センス光るかも！？",
-          "金銭感覚がしっかりしてる",
-          "ギャンブル運は波あり",
-          "無駄遣いに注意のサイン",
-          "急な臨時収入が期待できる",
-          "副業に向いているタイプ",
-          "お金で人を助ける器あり",
-          "セールを見逃さない達人",
-          "節約術が得意な生活派",
-          "浪費癖にちょっと注意",
-          "お金はあとからついてくる",
-          "大金よりも安定志向",
-          "人からの援助に恵まれる",
-          "堅実さが将来の鍵",
-          "実は玉の輿運！？"
-        ][i]}`),
-
-        health: Array.from({ length: 20 }, (_, i) => `🏥 健康運Lv${i + 1}：${[
-          "体力バッチリ元気ハツラツ！",
-          "ちょっと無理しがちな傾向",
-          "よく寝ると運気アップ",
-          "健康志向な生活スタイル",
-          "ストレス発散が上手",
-          "運動不足になりやすいかも",
-          "食生活を見直すと◎",
-          "自律神経に注意してね",
-          "風邪に負けない強さあり",
-          "自然の中でリフレッシュ推奨",
-          "季節の変わり目に注意",
-          "肌トラブルは水分補給で回避",
-          "内臓に優しい食事を",
-          "不摂生は溜め込まないで",
-          "歯や目のケアを忘れずに",
-          "冷え対策が吉",
-          "無理せず休むことも大事",
-          "不調サインに敏感であれ",
-          "健康運はこれから右肩上がり",
-          "ウォーキングが開運アクション"
-        ][i]}`),
-
-        personality: Array.from({ length: 20 }, (_, i) => `🧠 性格診断Lv${i + 1}：${[
-          "人当たりの良い優しさNo.1",
-          "ちょっと頑固だけど信念強い",
-          "空気を読むのが得意",
-          "細かいことに気づく天才",
-          "一人の時間を大切にする",
-          "聞き上手で頼られるタイプ",
-          "芯が強くてブレない性格",
-          "自由人だけど魅力的",
-          "ふわっとしてて癒し系",
-          "熱しやすく冷めやすい一面も",
-          "負けず嫌いな努力家",
-          "感受性豊かでロマンチスト",
-          "バランス感覚が秀逸",
-          "話し方にユーモアあり",
-          "いつもニコニコ平和主義",
-          "目標達成型ストイック派",
-          "臨機応変な柔軟派",
-          "ときに毒舌なツッコミ担当",
-          "気配り上手で裏ボス感あり",
-          "場を明るくする太陽みたいな人"
-        ][i]}`)
+      // ダミー結果生成（本実装ではAIモデルやMediaPipe/OPENCVで実測）
+      const genreResults = {
+        romance: ['情熱的で直感派', '控えめで思慮深い', '感情豊かで表現上手'],
+        work: ['論理的で戦略家タイプ', '柔軟でひらめき型', '安定志向で努力家'],
+        money: ['金運上昇中', '計画的に貯蓄するタイプ', '投資センスあり'],
+        health: ['健康体そのもの', '無理しすぎ注意', 'バランス命'],
+        personality: ['おっとり平和主義', '好奇心旺盛な探求者', '誠実でまじめ']
       };
 
+      let final = '';
       if (genre === 'all') {
-        return Object.keys(comments).map(key => comments[key][score]).join('\n');
+        for (const key in genreResults) {
+          const rand = Math.floor(Math.random() * genreResults[key].length);
+          final += `<p><strong>${key.toUpperCase()}：</strong>${genreResults[key][rand]}</p>`;
+        }
       } else {
-        return comments[genre][score];
+        const rand = Math.floor(Math.random() * genreResults[genre].length);
+        final = `<p>${genreResults[genre][rand]}</p>`;
       }
+
+      resultsDiv.innerHTML = `<h2>診断結果</h2>${final}`;
     }
 
-    async function savePDF() {
-      const {{ jsPDF }} = window.jspdf;
-      const doc = new jsPDF();
-      doc.setFontSize(14);
-      doc.text("手相診断レポート", 10, 10);
-      doc.text(resultText.innerText, 10, 20);
-      doc.save("palm_result.pdf");
+    function shareLine() {
+      const url = encodeURIComponent(window.location.href);
+      const text = encodeURIComponent("合コンで使える！あなたの手相診断結果はこちら→");
+      window.open(`https://line.me/R/msg/text/?${text}%20${url}`);
     }
 
-    function shareLINE() {
-      const msg = encodeURIComponent("\n【手相診断結果】\n" + resultText.innerText);
-      const url = `https://line.me/R/msg/text/?${msg}`;
-      window.open(url);
+    function shareInsta() {
+      alert("インスタDMはこの画面のスクショを送ってみてね💬");
     }
   </script>
 </body>
