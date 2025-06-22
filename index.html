@@ -1,61 +1,221 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>手相カメラ</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <title>手相AI診断 - カメラ対応版</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
   <style>
     body {
+      font-family: sans-serif;
       background-color: #e0f7fa;
       text-align: center;
-      font-family: sans-serif;
-      margin: 0;
       padding: 20px;
     }
-    video, canvas {
-      width: 100%;
-      max-width: 400px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
-      margin-top: 10px;
+    canvas {
+      border: 1px solid #ccc;
+      max-width: 100%;
+      touch-action: manipulation;
     }
-    button {
-      margin-top: 15px;
+    button, input[type="file"] {
+      margin: 10px;
       padding: 10px 20px;
       font-size: 16px;
-      background-color: #4dd0e1;
       border: none;
+      background: #4dd0e1;
       color: white;
       border-radius: 8px;
       cursor: pointer;
     }
+    #resultText {
+      margin-top: 10px;
+      font-size: 16px;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
-  <h1>手のひらを撮影しよう！</h1>
-  <video id="video" autoplay playsinline></video>
-  <canvas id="canvas" style="display: none;"></canvas>
-  <br>
-  <button id="capture">📸 撮影する</button>
+  <h2>📷 手のひらでAI手相診断（カメラ対応）</h2>
+  <input type="file" id="fileInput" accept="image/*" capture="environment" />
+  <canvas id="canvas"></canvas><br />
+  <button id="diagnoseBtn">🧠 診断する</button>
+  <div id="resultText"></div>
 
   <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const button = document.getElementById('capture');
-    let stream = null;
-    let captured = false;
+    const fileInput = document.getElementById("fileInput");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const diagnoseBtn = document.getElementById("diagnoseBtn");
+    const resultText = document.getElementById("resultText");
 
-    async function startCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } },
-          audio: false
-        });
-        video.srcObject = stream;
-      } catch (e) {
-        alert("外カメラが使えません。内カメラを起動します。");
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false
-          });
+    let lines = [];
+
+    fileInput.addEventListener("change", e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        setTimeout(() => processImage(img), 500);
+      };
+      img.src = URL.createObjectURL(file);
+    });
+
+    function processImage(img) {
+      const src = cv.imread(img);
+      let gray = new cv.Mat();
+      let edges = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 1.5, 1.5);
+      cv.Canny(gray, edges, 50, 150);
+
+      let linesMat = new cv.Mat();
+      cv.HoughLinesP(edges, linesMat, 1, Math.PI / 180, 60, 60, 10);
+
+      lines = [];
+      for (let i = 0; i < linesMat.rows; i++) {
+        let [x1, y1, x2, y2] = linesMat.intPtr(i);
+        lines.push({ x1, y1, x2, y2, label: null });
+      }
+
+      classifyLinesAI(lines, canvas.height);
+      drawLines();
+
+      src.delete();
+      gray.delete();
+      edges.delete();
+      linesMat.delete();
+    }
+
+    function classifyLinesAI(lines, height) {
+      lines.forEach(line => {
+        const angle = lineAngle(line);
+        const centerY = (line.y1 + line.y2) / 2;
+
+        // 簡易判定: 上部エリアかつ傾きが下向きなら感情線
+        if (centerY < height * 0.33 && angle < -10 && angle > -80) {
+          line.label = "感情線";
+        }
+        // 中央エリアは知能線
+        else if (centerY >= height * 0.33 && centerY < height * 0.66) {
+          line.label = "知能線";
+        }
+        // それ以外は生命線
+        else {
+          line.label = "生命線";
+        }
+      });
+    }
+
+    function drawLines() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 2;
+      lines.forEach(line => {
+        switch (line.label) {
+          case "感情線": ctx.strokeStyle = "red"; break;
+          case "知能線": ctx.strokeStyle = "blue"; break;
+          case "生命線": ctx.strokeStyle = "green"; break;
+          default: ctx.strokeStyle = "gray"; break;
+        }
+        ctx.beginPath();
+        ctx.moveTo(line.x1, line.y1);
+        ctx.lineTo(line.x2, line.y2);
+        ctx.stroke();
+      });
+    }
+
+    diagnoseBtn.addEventListener("click", () => {
+      const diagnosis = generateDiagnosis(lines);
+      resultText.innerText = diagnosis.join("\n");
+      drawLines();
+      ctx.fillStyle = "black";
+      ctx.font = "16px sans-serif";
+      diagnosis.forEach((text, i) => {
+        ctx.fillText(text, 10, canvas.height - (diagnosis.length - i) * 24);
+      });
+    });
+
+    function lineLength(line) {
+      return Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
+    }
+
+    function lineAngle(line) {
+      return Math.atan2(line.y2 - line.y1, line.x2 - line.x1) * 180 / Math.PI;
+    }
+
+    function generateDiagnosis(lines) {
+      const result = [];
+      const emotionLine = lines.find(l => l.label === "感情線");
+      const brainLine = lines.find(l => l.label === "知能線");
+      const lifeLine = lines.find(l => l.label === "生命線");
+
+      if (emotionLine) {
+        const len = lineLength(emotionLine);
+        const ang = lineAngle(emotionLine);
+        if (len > 250 && ang < -20) {
+          result.push("💖 恋愛：情熱的で恋に一直線！");
+        } else if (len > 200 && ang > 0) {
+          result.push("💖 恋愛：愛情深く尽くすタイプ");
+        } else if (len < 150) {
+          result.push("💖 恋愛：恋に奥手でなかなか動けない");
+        } else {
+          result.push("💖 恋愛：感情は内に秘めるタイプ");
+        }
+      }
+
+      if (brainLine) {
+        const ang = lineAngle(brainLine);
+        if (ang < -45) {
+          result.push("🧠 頭脳：直感派・アイデア重視タイプ");
+        } else if (ang > -15) {
+          result.push("🧠 頭脳：論理派・慎重な分析型");
+        } else {
+          result.push("🧠 頭脳：状況判断が得意なバランスタイプ");
+        }
+      }
+
+      if (lifeLine) {
+        const len = lineLength(lifeLine);
+        if (len > 250) {
+          result.push("💪 健康：体力・精神力ともに強靭！");
+        } else if (len > 180) {
+          result.push("💪 健康：健康への意識が高いタイプ");
+        } else {
+          result.push("💪 健康：無理しすぎず休息も大切に");
+        }
+      }
+
+      if (emotionLine && brainLine) {
+        const dy = Math.abs(emotionLine.y1 - brainLine.y1);
+        if (dy < 30) {
+          result.push("💰 金運：計画的に貯めるタイプ");
+        } else if (dy > 60) {
+          result.push("💰 金運：お金の流れに波がありそう");
+        } else {
+          result.push("💰 金運：人脈が金運を左右するタイプ");
+        }
+      } else {
+        result.push("💰 金運：堅実と大胆の中間タイプ");
+      }
+
+      if (brainLine) {
+        const ang = lineAngle(brainLine);
+        const len = lineLength(brainLine);
+        if (ang < -45 && len > 200) {
+          result.push("💼 仕事：創造的な仕事にやりがいを感じる");
+        } else if (ang > -20) {
+          result.push("💼 仕事：論理型でIT・研究に向く");
+        } else {
+          result.push("💼 仕事：空気を読んで動くバランスタイプ");
+        }
+      }
+
+      return result;
+    }
+  </script>
+</body>
+</html>
