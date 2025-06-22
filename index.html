@@ -120,6 +120,7 @@
     let camera;
     let isProcessing = false;
     let streamingStarted = false;
+    let mediaStream = null;
 
     const detailedComments = {
       left: {
@@ -166,7 +167,6 @@
       canvas.height = video.videoHeight;
       ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-      // OpenCV処理：グレースケール＆Cannyエッジ抽出
       const src = cv.imread(canvas);
       const gray = new cv.Mat();
       const edges = new cv.Mat();
@@ -174,7 +174,6 @@
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
       cv.Canny(gray, edges, 50, 150);
 
-      // 輪郭検出
       let contours = new cv.MatVector();
       let hierarchy = new cv.Mat();
       cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -245,15 +244,41 @@
       shutterButton.textContent = "📸 シャッター";
     });
 
+    // 外カメラ優先でdeviceId指定する関数
+    async function getBackCameraDeviceId() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        return null;
+      }
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === "videoinput");
+      // ラベルに back または rear があるものを探す
+      for (const device of videoDevices) {
+        if (device.label.toLowerCase().includes("back") || device.label.toLowerCase().includes("rear")) {
+          return device.deviceId;
+        }
+      }
+      // 見つからなければ最初のビデオ入力を返す
+      return videoDevices.length > 0 ? videoDevices[0].deviceId : null;
+    }
+
     async function startCameraFunc() {
       if (streamingStarted) return;
       try {
-        console.log("カメラ起動中...");
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }, // exactは外してみる
+        const backCameraId = await getBackCameraDeviceId();
+        if (!backCameraId) {
+          alert("カメラが見つかりませんでした。");
+          return;
+        }
+        console.log("外カメラデバイスID:", backCameraId);
+        if (mediaStream) {
+          // 古いストリームがあれば停止
+          mediaStream.getTracks().forEach(track => track.stop());
+        }
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: backCameraId } },
           audio: false,
         });
-        video.srcObject = stream;
+        video.srcObject = mediaStream;
 
         camera = new Camera(video, {
           onFrame: async () => {
