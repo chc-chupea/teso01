@@ -1,305 +1,121 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>手相占いカメラ診断</title>
-<link href="https://fonts.googleapis.com/css2?family=Kosugi+Maru&display=swap" rel="stylesheet" />
-<style>
-  body {
-    font-family: 'Kosugi Maru', sans-serif;
-    background-color: #fdf5e6;
-    color: #333;
-    margin: 0;
-    padding: 1em;
-    text-align: center;
-    position: relative;
-  }
-  h1 {
-    font-size: 1.5em;
-    color: #7566a0;
-    margin-bottom: 0.5em;
-  }
-  select, button {
-    font-size: 1em;
-    padding: 0.5em 1em;
-    margin: 1em 0.5em;
-    border-radius: 12px;
-    border: 1px solid #ccc;
-    background-color: #fff;
-    cursor: pointer;
-  }
-  #videoElement, canvas {
-    width: 100%;
-    max-width: 400px;
-    border-radius: 10px;
-    margin: 0.5em 0;
-  }
-  .result {
-    background-color: #fff;
-    border-radius: 10px;
-    padding: 1em;
-    margin-top: 1em;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    white-space: pre-line;
-    min-height: 5em;
-  }
-  #countdownOverlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.75);
-    color: white;
-    font-size: 6em;
-    display: none;
-    justify-content: center;
-    align-items: center;
-    z-index: 9999;
-    user-select: none;
-  }
-  #countdownText {
-    font-weight: 900;
-    text-shadow: 0 0 10px #fff;
-  }
-  .share-btn {
-    background-color: #ffe0b2;
-    color: #5d4037;
-    margin: 0.5em;
-    border: none;
-    cursor: pointer;
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>ゆるかわ手相診断 for 合コン</title>
+  <style>
+    body { background:#fefaf6; color:#333; font-family:"Rounded M+ 1c","ヒラギノ丸ゴ Pro","Arial",sans-serif; text-align:center; padding:1rem; }
+    h1 { font-size:1.8rem; margin-bottom:0.5rem; }
+    #video { width:100%; max-width:360px; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.2); }
+    #canvas { display:none; }
+    .controls { margin:1rem 0; }
+    select, button { font-size:1rem; padding:0.5em; margin:0.3em; border-radius:8px; border:none; background:#ddd; }
+    button { background:#fff; }
+    p.note { font-size:0.9rem; color:#666; }
+    .result { margin-top:1rem; padding:1rem; border-radius:10px; background:#fff; }
+    .share { margin-top:1rem; }
+    .share a { margin:0 0.5rem; text-decoration:none; color:#fff; background:#3b5998;padding:0.5em 1em;border-radius:20px; }
+    .share a.instagram { background:#E4405F; }
+  </style>
 </head>
 <body>
-<h1>スマホ手相占いカメラ診断</h1>
-<p>まずはジャンルを選んでね！（全部診断もOK）</p>
-<select id="genre">
-  <option value="">ジャンルを選んでください</option>
-  <option value="all">全部自動診断</option>
-  <option value="love">恋愛</option>
-  <option value="work">仕事</option>
-  <option value="money">金運</option>
-  <option value="health">健康</option>
-  <option value="personality">性格</option>
-</select>
-<br />
-<button id="startCameraBtn">カメラ起動して手を映す</button>
-<button id="shutterButton" style="display:none;">📸 シャッター</button>
+  <h1>🎉 合コン専用！ゆるかわ手相診断</h1>
+  <p class="note">まずは、左or右手のジャンルを選んでね♡</p>
+  <div class="controls">
+    <select id="handSelect"><option value="">— 手を選ぶ —</option>
+      <option value="left">左手（素質）</option>
+      <option value="right">右手（努力）</option>
+    </select>
+    <select id="genreSelect">
+      <option value="">— ジャンル選択 —</option>
+      <option value="love">恋愛</option>
+      <option value="work">仕事</option>
+      <option value="money">金運</option>
+      <option value="health">健康</option>
+      <option value="personality">性格</option>
+      <option value="all">全部自動診断</option>
+    </select>
+  </div>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+  <button id="captureBtn">📸 手のひらを撮る</button>
+  <div class="result" id="resultBox" style="display:none"></div>
+  <div class="share" id="shareBox" style="display:none">
+    <a href="#" id="shareLine">LINEでシェア</a>
+    <a href="#" id="shareInstagram" class="instagram">Insta DMで送る</a>
+  </div>
 
-<video autoplay playsinline id="videoElement" muted></video>
-<canvas id="canvas" style="display:none;"></canvas>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/opencv.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const handSelect = document.getElementById('handSelect');
+    const genreSelect = document.getElementById('genreSelect');
+    const captureBtn = document.getElementById('captureBtn');
+    const resultBox = document.getElementById('resultBox');
+    const shareBox = document.getElementById('shareBox');
+    const shareLine = document.getElementById('shareLine');
+    const shareInstagram = document.getElementById('shareInstagram');
 
-<div id="countdownOverlay">
-  <div id="countdownText"></div>
-</div>
-
-<div class="result" id="result"></div>
-
-<button class="share-btn" onclick="shareLINE()">LINEでシェア</button>
-<button class="share-btn" onclick="shareInstagram()">インスタDMで送る</button>
-
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-<script src="https://docs.opencv.org/4.6.0/opencv.js"></script>
-<script>
-  const startCameraBtn = document.getElementById("startCameraBtn");
-  const shutterButton = document.getElementById("shutterButton");
-  const video = document.getElementById("videoElement");
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d");
-  const resultBox = document.getElementById("result");
-  const countdownOverlay = document.getElementById("countdownOverlay");
-  const countdownText = document.getElementById("countdownText");
-
-  let currentHand = "left";
-  let handednessResult = "";
-  let model = null;
-  let camera = null;
-  let hands = null;
-  let processing = false;
-
-  // 詳細コメント辞書
-  const detailedComments = {
-    left: {
-      personality: Array.from({ length: 20 }, (_, i) => `【性格Lv${i + 1}】繊細で思慮深い一面あり`),
-      love: Array.from({ length: 20 }, (_, i) => `【恋愛Lv${i + 1}】理想高めで内に秘めた情熱派`),
-      health: Array.from({ length: 20 }, (_, i) => `【健康Lv${i + 1}】自己管理力が光るタイプ`),
-      all: Array.from({ length: 20 }, (_, i) => `【全体Lv${i + 1}】内面の魅力がじわじわ伝わる人`),
-    },
-    right: {
-      work: Array.from({ length: 20 }, (_, i) => `【仕事Lv${i + 1}】着実に信頼を積む努力家`),
-      money: Array.from({ length: 20 }, (_, i) => `【金運Lv${i + 1}】堅実派でコツコツ型の貯蓄スタイル`),
-      health: Array.from({ length: 20 }, (_, i) => `【健康Lv${i + 1}】活発でポジティブ体質`),
-      love: Array.from({ length: 20 }, (_, i) => `【恋愛Lv${i + 1}】前向きな恋の立役者`),
-      all: Array.from({ length: 20 }, (_, i) => `【全体Lv${i + 1}】今が勝負どき、努力は実を結ぶ`),
-    },
-  };
-
-  function generateDetailedComment(score, genre, hand) {
-    const dict = detailedComments[hand][genre] || detailedComments[hand].all;
-    const level = Math.max(0, Math.min(19, Math.floor(score)));
-    return dict[level] || "分析中…";
-  }
-
-  function showCountdownAndRunAnalysis() {
-    let count = 3;
-    countdownText.textContent = count;
-    countdownOverlay.style.display = "flex";
-
-    const interval = setInterval(() => {
-      count--;
-      if (count > 0) {
-        countdownText.textContent = count;
-      } else {
-        clearInterval(interval);
-        countdownText.textContent = "占い中…✨";
-        runAnalysis().finally(() => {
-          countdownOverlay.style.display = "none";
-          shutterButton.disabled = false;
-          shutterButton.style.display = "inline-block";
-        });
-      }
-    }, 1000);
-  }
-
-  async function runAnalysis() {
-    if (!video.videoWidth || !video.videoHeight) {
-      resultBox.textContent = "映像が読み込まれていません。もう一度シャッターを押してください。";
-      return;
-    }
-    processing = true;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const src = cv.imread(canvas);
-    const gray = new cv.Mat();
-    const edges = new cv.Mat();
-
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.Canny(gray, edges, 50, 150);
-
-    let contours = new cv.MatVector();
-    let hierarchy = new cv.Mat();
-    cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-    let totalLength = 0;
-    let totalAngle = 0;
-    let count = 0;
-
-    for (let i = 0; i < contours.size(); i++) {
-      let contour = contours.get(i);
-      const length = cv.arcLength(contour, false);
-      if (length < 30) {
-        contour.delete();
-        continue;
-      }
-      const rotatedRect = cv.minAreaRect(contour);
-      let angle = rotatedRect.angle;
-      if (angle < -45) angle += 90;
-
-      totalLength += length;
-      totalAngle += angle;
-      count++;
-      contour.delete();
-    }
-
-    contours.delete();
-    hierarchy.delete();
-    gray.delete();
-    src.delete();
-    edges.delete();
-
-    const avgLength = count > 0 ? totalLength / count : 0;
-    const avgAngle = count > 0 ? totalAngle / count : 0;
-
-    const lengthScore = Math.min(1, avgLength / 300);
-    const angleScore = (avgAngle + 45) / 90;
-    let combinedScore = Math.floor((lengthScore * 0.6 + angleScore * 0.4) * 19);
-
-    let tfImg = tf.browser.fromPixels(canvas);
-    tfImg = tf.image.resizeBilinear(tfImg, [64, 64]);
-    tfImg = tfImg.expandDims(0).toFloat().div(255);
-
-    let predictionText = "";
-    if (model) {
-      const prediction = await model.predict(tfImg).data();
-      const labels = ["感情線", "頭脳線", "生命線", "運命線"];
-      const maxIndex = prediction.indexOf(Math.max(...prediction));
-      predictionText = `AI判定：${labels[maxIndex]}が明瞭です`;
-      if (labels[maxIndex] === "生命線") {
-        combinedScore = Math.min(19, combinedScore + 3);
-      }
-    }
-    tfImg.dispose();
-
-    const genre = document.getElementById("genre").value || "all";
-    const comment = generateDetailedComment(combinedScore, genre, currentHand);
-
-    resultBox.innerHTML = `<h2>${handednessResult} 診断</h2>
-      <p>${comment}</p>
-      <p>${predictionText}</p>
-      <p>線の平均長さ: ${avgLength.toFixed(1)} px<br>線の傾き: ${avgAngle.toFixed(1)}°</p>`;
-
-    processing = false;
-  }
-
-  // MediaPipe Handsセットアップ
-  hands = new Hands({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-  });
-  hands.setOptions({
-    maxNumHands: 1,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence: 0.7
-  });
-  hands.onResults((results) => {
-    if (results.multiHandedness && results.multiHandedness.length > 0) {
-      currentHand = results.multiHandedness[0].label === "Right" ? "right" : "left";
-      handednessResult = currentHand === "right" ? "右手（現在・運勢）" : "左手（素質・性格）";
-    }
-  });
-
-  startCameraBtn.addEventListener("click", async () => {
-    startCameraBtn.disabled = true;
-    resultBox.textContent = "";
-    try {
-      const constraints = { video: { facingMode: "environment" }, audio: false };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    async function setupCamera(){
+      const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
       video.srcObject = stream;
-
-      camera = new Camera(video, {
-        onFrame: async () => {
-          await hands.send({ image: video });
-        },
-        width: 640,
-        height: 480
-      });
-      await camera.start();
-
-      model = await tf.loadLayersModel("/model/model.json");
-      shutterButton.style.display = "inline-block";
-      startCameraBtn.style.display = "none";
-    } catch (err) {
-      alert("カメラ起動に失敗しました: " + err.message);
-      startCameraBtn.disabled = false;
+      await new Promise(r=>video.onloadedmetadata = r);
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     }
-  });
 
-  shutterButton.addEventListener("click", () => {
-    if (processing) return;
-    shutterButton.disabled = true;
-    showCountdownAndRunAnalysis();
-  });
+    await setupCamera();
 
-  function shareLINE() {
-    const text = encodeURIComponent("手相占いやってみた！\n診断結果はこちら→ https://your-app-link.com");
-    window.open(`https://line.me/R/msg/text/?${text}`, "_blank");
-  }
-  function shareInstagram() {
-    alert("インスタのDMには、診断結果をスクショして送ってね！");
-  }
-</script>
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({maxNumHands:1,minDetectionConfidence:0.7});
+    hands.onResults(onHands);
+
+    const tfModel = await tf.loadGraphModel('model.json'); // 学習済みモデルURL（※実装時に用意）
+
+    function onHands(results){
+      // メディアパイプで手の左右判別・指本数・輪郭点取得
+      // OpenCVで線抽出（Canny）
+      // TensorFlowでパターン分類 → 20段階スコア、コメント自動生成
+      // 仮置き表示サンプル
+      const hand = results.multiHandedness?.[0]?.label || '?';
+      const fingers = results.multiHandLandmarks?.[0]?.length || 0;
+      const sampleScore = Math.floor(Math.random()*20)+1;
+      resultBox.style.display='block';
+      resultBox.innerHTML = `<strong>${hand==="Left"?"左手":"右手"}・${
+        genreSelect.value==="all"?"全部自動":genreSelect.options[genreSelect.selectedIndex].text
+      }</strong><br>スコア：${sampleScore}/20<br>コメント：${generateComment(hand,sampleScore,genreSelect.value)}`;
+      shareBox.style.display='block';
+    }
+
+    function captureFrame(){
+      ctx.drawImage(video,0,0);
+      const imgData = canvas.toDataURL('image/jpeg');
+      // bg処理とモデル判定やライン解析を呼び出し
+      hands.send({image:video});
+    }
+
+    captureBtn.addEventListener('click',()=>{
+      if (!handSelect.value||!genreSelect.value){
+        alert('手とジャンルを選んでね♡');
+        return;
+      }
+      captureFrame();
+    });
+
+    function generateComment(hand, score, genre){
+      const prefixes=["かわいく","しっかり","ほんわか","アグレッシブ","おちゃめ"];
+      const bodies=["あなたらしさが光ってるよ","バランスいいね","努力家の証だね","愛嬌あるね","安定感あるね"];
+      const idx = score % prefixes.length;
+      return `${prefixes[idx]}${genreSelect.options[genreSelect.selectedIndex].text}運：${bodies[idx]}`;
+    }
+
+    shareLine.href = 'https://line.me/R/share?text=' + encodeURIComponent(resultBox.textContent);
+    shareInstagram.href = 'instagram://message?text=' + encodeURIComponent(resultBox.textContent);
+
+  </script>
 </body>
 </html>
