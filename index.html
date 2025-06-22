@@ -22,11 +22,13 @@
     select,
     button {
       font-size: 1em;
-      padding: 0.5em;
+      padding: 0.5em 1.2em;
       margin: 1em 0;
       border-radius: 12px;
       border: 1px solid #ccc;
       background-color: #fff;
+      cursor: pointer;
+      user-select: none;
     }
     #videoElement,
     canvas {
@@ -34,6 +36,7 @@
       max-width: 400px;
       border-radius: 10px;
       margin: 0.5em 0;
+      background: black;
     }
     .result {
       background-color: #fff;
@@ -42,6 +45,7 @@
       margin-top: 1em;
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
       white-space: pre-line;
+      min-height: 6em;
     }
     .share-btn {
       background-color: #ffe0b2;
@@ -49,6 +53,25 @@
       margin: 0.5em;
       border: none;
       cursor: pointer;
+      user-select: none;
+    }
+    #countdown {
+      font-size: 5em;
+      font-weight: bold;
+      color: #ff5722;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      user-select: none;
+      text-shadow: 0 0 8px #ff5722;
+      display: none;
+      z-index: 100;
+    }
+    #container {
+      position: relative;
+      display: inline-block;
     }
   </style>
 </head>
@@ -65,9 +88,15 @@
     <option value="personality">性格</option>
   </select>
   <br />
-  <button onclick="startCamera()">カメラ起動して手を映す</button>
-  <video autoplay playsinline id="videoElement"></video>
-  <canvas id="canvas"></canvas>
+  <button id="startButton">カメラ起動</button>
+  <button id="shutterButton" style="display:none;">📸 シャッター</button>
+
+  <div id="container">
+    <video autoplay playsinline id="videoElement"></video>
+    <canvas id="canvas"></canvas>
+    <div id="countdown">3</div>
+  </div>
+
   <div class="result" id="result"></div>
   <button class="share-btn" onclick="shareLINE()">LINEでシェア</button>
   <button class="share-btn" onclick="shareInstagram()">インスタDMで送る</button>
@@ -81,10 +110,16 @@
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
     const resultBox = document.getElementById("result");
+    const startButton = document.getElementById("startButton");
+    const shutterButton = document.getElementById("shutterButton");
+    const countdownEl = document.getElementById("countdown");
 
     let handednessResult = "";
     let currentHand = "left";
     let model;
+    let camera;
+    let isProcessing = false;  // 判定中は連続処理防止
+    let streamingStarted = false;
 
     const detailedComments = {
       left: {
@@ -120,6 +155,8 @@
     });
 
     hands.onResults(async (results) => {
+      if (!isProcessing) return; // 判定時以外は無視
+
       if (results.multiHandedness && results.multiHandedness.length > 0) {
         currentHand = results.multiHandedness[0].label === "Right" ? "right" : "left";
         handednessResult = currentHand === "right" ? "右手（現在・運勢）" : "左手（素質・性格）";
@@ -209,25 +246,68 @@
         <p>${comment}</p>
         <p>${predictionText}</p>
         <p>線の平均長さ: ${avgLength.toFixed(1)} px<br>線の傾き: ${avgAngle.toFixed(1)}°</p>`;
+
+      // 判定完了で処理停止
+      isProcessing = false;
+      shutterButton.disabled = false;
+      shutterButton.textContent = "📸 シャッター";
     });
 
-    async function startCamera() {
+    startButton.addEventListener("click", async () => {
+      if (streamingStarted) return; // 既に起動済み
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" } }, // 外カメラ優先
+          audio: false,
+        });
         video.srcObject = stream;
-        const camera = new Camera(video, {
+
+        camera = new Camera(video, {
           onFrame: async () => {
+            if (!isProcessing) return; // 判定時のみ処理
             await hands.send({ image: video });
           },
           width: 640,
           height: 480,
         });
         camera.start();
+
         model = await tf.loadLayersModel("/model/model.json");
+
+        streamingStarted = true;
+        startButton.style.display = "none";
+        shutterButton.style.display = "inline-block";
+        resultBox.textContent = "カメラ起動完了！手を映してシャッターボタンを押してね。";
       } catch (e) {
         alert("カメラの起動に失敗しました: " + e.message);
       }
-    }
+    });
+
+    shutterButton.addEventListener("click", () => {
+      if (!streamingStarted || isProcessing) return;
+
+      // カウントダウン開始
+      let count = 3;
+      countdownEl.textContent = count;
+      countdownEl.style.display = "block";
+      shutterButton.disabled = true;
+      shutterButton.textContent = "撮影中...";
+
+      const countdownInterval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          countdownEl.textContent = count;
+        } else {
+          clearInterval(countdownInterval);
+          countdownEl.style.display = "none";
+
+          // 判定スタート
+          isProcessing = true;
+          resultBox.textContent = "占い中…✨";
+          hands.send({ image: video }); // 手動1回送信
+        }
+      }, 1000);
+    });
 
     function shareLINE() {
       const text = encodeURIComponent("手相占いやってみた！\n診断結果はこちら→ https://your-app-link.com");
