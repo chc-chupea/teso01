@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>手相ミライ診断</title>
+<title>手相ミライ診断（全部ジャンル対応版）</title>
 <style>
   body {
     font-family: "Yu Gothic", sans-serif;
@@ -53,7 +53,8 @@
     background: #fff0f6;
     border-radius: 0.8rem;
     box-shadow: 0 0 10px #f0a6b2;
-    text-align: center;
+    text-align: left;
+    white-space: pre-wrap;
   }
   .comment {
     margin-top: 1rem;
@@ -69,10 +70,10 @@
 </head>
 <body>
 
-<header>手相ミライ診断</header>
+<header>手相ミライ診断（全部ジャンル対応版）</header>
 
 <main>
-  <button id="cameraStartBtn">カメラ起動</button>
+  <button id="cameraStartBtn">カメラ起動（背面カメラ優先）</button>
   <video id="video" autoplay playsinline></video>
   <button id="shutterBtn" disabled>シャッターを切る</button>
   <canvas id="canvas"></canvas>
@@ -90,6 +91,7 @@
       <option value="personality">性格 🧠</option>
       <option value="health">健康運 💪</option>
       <option value="total">総合運 🌟</option>
+      <option value="all">全部 🌈</option>
     </select>
 
     <button id="diagnosisStartBtn" disabled>診断開始</button>
@@ -120,11 +122,10 @@
   let hands = null;
   let landmarksForDiagnosis = null;
 
-  // コメントは前回と同じものを使います（省略のため割愛）
-
+  // 診断コメント一覧
   const comments = {
     love: [
-      "まだまだ魅力が眠っています。焦らずゆっくり。", 
+      "まだまだ魅力が眠っています。焦らずゆっくり。",
       "もうすぐ誰かがあなたに気づく予感。",
       "素直な気持ちが好感度UPの鍵。",
       "笑顔を忘れずに。モテ度アップ！",
@@ -257,22 +258,23 @@
     ]
   };
 
+  // 距離計算（3D）
   function calcDistance(a, b) {
     return Math.sqrt(
       (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2
     );
   }
 
-  // 指の開き具合スコア計算（例）: 親指先（4）と人差し指先（8）間距離の割合で簡易判定
+  // 指の開き具合スコア計算（例）
   function calcScore(landmarks) {
-    const dist = calcDistance(landmarks[4], landmarks[8]);
-    const base = calcDistance(landmarks[0], landmarks[12]);
+    const dist = calcDistance(landmarks[4], landmarks[8]);  // 親指先と人差し指先
+    const base = calcDistance(landmarks[0], landmarks[12]); // 手首〜中指先
     let score = Math.min(19, Math.floor((dist / base) * 20));
     if (score < 0) score = 0;
     return score;
   }
 
-  // MediaPipe Hands 初期化（診断用に後で実行）
+  // MediaPipe Hands 初期化
   function createHandsInstance(onResultsCallback) {
     const handsInstance = new window.Hands({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -297,7 +299,7 @@
       cameraStream = stream;
       shutterBtn.disabled = false;
     } catch (e) {
-      // 背面カメラなければ前面カメラにフォールバック
+      // 背面カメラ無ければ前面カメラにフォールバック
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" }, audio: false
       });
@@ -307,11 +309,9 @@
     }
     await videoElement.play();
 
-    // canvasサイズ合わせる
     canvasElement.width = videoElement.videoWidth || 480;
     canvasElement.height = videoElement.videoHeight || 360;
 
-    // video表示、canvasは隠す
     videoElement.style.display = "block";
     canvasElement.style.display = "none";
 
@@ -323,7 +323,7 @@
   shutterBtn.addEventListener("click", () => {
     // videoからcanvasに静止画描画
     canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-    landmarksForDiagnosis = null; // リセット
+    landmarksForDiagnosis = null;
 
     // カメラ停止
     if (cameraStream) {
@@ -333,7 +333,6 @@
     videoElement.srcObject = null;
     videoElement.style.display = "none";
 
-    // canvas表示（撮った写真）
     canvasElement.style.display = "block";
 
     shutterBtn.disabled = true;
@@ -343,28 +342,56 @@
     scoreArea.style.display = "none";
   });
 
-  // 診断開始時の処理
+  // 診断開始
   diagnosisStartBtn.addEventListener("click", () => {
     diagnosisStartBtn.disabled = true;
     scoreArea.style.display = "none";
 
-    // MediaPipe Hands で静止画を解析
     if (!hands) {
       hands = createHandsInstance(onDiagnosisResults);
     }
     hands.send({image: canvasElement});
   });
 
-  // 診断結果取得時
+  // 診断結果コールバック（全部ジャンル対応版）
   function onDiagnosisResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       landmarksForDiagnosis = results.multiHandLandmarks[0];
+
+      // 静止画クリア＆再描画
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(canvasElement, 0, 0, canvasElement.width, canvasElement.height);
+
+      // 線とランドマーク描画
+      window.drawConnectors(canvasCtx, landmarksForDiagnosis, window.Hands.HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+      window.drawLandmarks(canvasCtx, landmarksForDiagnosis, {color: '#FF0000', lineWidth: 2});
+
       const score = calcScore(landmarksForDiagnosis);
       scoreValueElem.textContent = score;
 
       const genre = genreSelect.value;
-      const idx = Math.min(score, comments[genre].length - 1);
-      commentArea.textContent = comments[genre][idx];
+
+      if (genre === "all") {
+        // 全ジャンルコメントまとめ表示
+        let allComments = "";
+        const genreNames = {
+          love: "ラブ運",
+          work: "仕事運",
+          money: "金運",
+          personality: "性格",
+          health: "健康運",
+          total: "総合運"
+        };
+        for (const key of ["love","work","money","personality","health","total"]) {
+          const idx = Math.min(score, comments[key].length - 1);
+          allComments += `<strong>${genreNames[key]}：</strong> ${comments[key][idx]}<br>`;
+        }
+        commentArea.innerHTML = allComments;
+      } else {
+        const idx = Math.min(score, comments[genre].length - 1);
+        commentArea.textContent = comments[genre][idx];
+      }
+
       scoreArea.style.display = "block";
     } else {
       commentArea.textContent = "手が写っていません。もう一度撮影してください。";
@@ -373,7 +400,6 @@
     diagnosisStartBtn.disabled = false;
   }
 
-  // ボタンイベント
   cameraStartBtn.addEventListener("click", async () => {
     cameraStartBtn.disabled = true;
     shutterBtn.disabled = true;
