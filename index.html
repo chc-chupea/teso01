@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>手相ミライ診断（全部ジャンル対応版）</title>
+<title>手相ミライ診断</title>
 <style>
   body {
     font-family: "Yu Gothic", sans-serif;
@@ -70,10 +70,10 @@
 </head>
 <body>
 
-<header>手相ミライ診断（全部ジャンル対応版）</header>
+<header>手相ミライ診断</header>
 
 <main>
-  <button id="cameraStartBtn">カメラ起動（背面カメラ優先）</button>
+  <button id="cameraStartBtn">カメラ起動</button>
   <video id="video" autoplay playsinline></video>
   <button id="shutterBtn" disabled>シャッターを切る</button>
   <canvas id="canvas"></canvas>
@@ -121,6 +121,7 @@
   let cameraStream = null;
   let hands = null;
   let landmarksForDiagnosis = null;
+  let capturedImageDataUrl = null;
 
   // 診断コメント一覧
   const comments = {
@@ -323,6 +324,7 @@
   shutterBtn.addEventListener("click", () => {
     // videoからcanvasに静止画描画
     canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+    capturedImageDataUrl = canvasElement.toDataURL("image/png"); 
     landmarksForDiagnosis = null;
 
     // カメラ停止
@@ -353,53 +355,74 @@
     hands.send({image: canvasElement});
   });
 
+
+
+
   // 診断結果コールバック（全部ジャンル対応版）
   function onDiagnosisResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       landmarksForDiagnosis = results.multiHandLandmarks[0];
 
-      // 静止画クリア＆再描画
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      canvasCtx.drawImage(canvasElement, 0, 0, canvasElement.width, canvasElement.height);
-
-      // 線とランドマーク描画
-      window.drawConnectors(canvasCtx, landmarksForDiagnosis, window.Hands.HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-      window.drawLandmarks(canvasCtx, landmarksForDiagnosis, {color: '#FF0000', lineWidth: 2});
-
-      const score = calcScore(landmarksForDiagnosis);
-      scoreValueElem.textContent = score;
-
-      const genre = genreSelect.value;
-
-      if (genre === "all") {
-        // 全ジャンルコメントまとめ表示
-        let allComments = "";
-        const genreNames = {
-          love: "ラブ運",
-          work: "仕事運",
-          money: "金運",
-          personality: "性格",
-          health: "健康運",
-          total: "総合運"
-        };
-        for (const key of ["love","work","money","personality","health","total"]) {
-          const idx = Math.min(score, comments[key].length - 1);
-          allComments += `<strong>${genreNames[key]}：</strong> ${comments[key][idx]}<br>`;
-        }
-        commentArea.innerHTML = allComments;
-      } else {
-        const idx = Math.min(score, comments[genre].length - 1);
-        commentArea.textContent = comments[genre][idx];
+      if (!capturedImageDataUrl) {
+        commentArea.textContent = "画像がありません。再撮影してください。";
+        scoreArea.style.display = "block";
+        diagnosisStartBtn.disabled = false;
+        return;
       }
 
-      scoreArea.style.display = "block";
+      const img = new Image();
+      img.onload = () => {
+        // 画像が読み込まれてから描画する
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.drawImage(img, 0, 0, canvasElement.width, canvasElement.height);
+
+        // ランドマークと接続線を描画
+        window.drawConnectors(canvasCtx, landmarksForDiagnosis, window.Hands.HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+        window.drawLandmarks(canvasCtx, landmarksForDiagnosis, {color: '#FF0000', lineWidth: 2});
+
+        // スコア算出と表示
+        const score = calcScore(landmarksForDiagnosis);
+        scoreValueElem.textContent = score;
+
+        const genre = genreSelect.value;
+        if (genre === "all") {
+          let allComments = "";
+          const genreNames = {
+            love: "ラブ運",
+            work: "仕事運",
+            money: "金運",
+            personality: "性格",
+            health: "健康運",
+            total: "総合運"
+          };
+          for (const key of Object.keys(genreNames)) {
+            const idx = Math.min(score, comments[key].length - 1);
+            allComments += `<strong>${genreNames[key]}：</strong> ${comments[key][idx]}<br>`;
+          }
+          commentArea.innerHTML = allComments;
+        } else {
+          const idx = Math.min(score, comments[genre].length - 1);
+          commentArea.textContent = comments[genre][idx];
+        }
+
+        scoreArea.style.display = "block";
+        diagnosisStartBtn.disabled = false;
+      };
+
+      img.onerror = () => {
+        commentArea.textContent = "画像の読み込みに失敗しました。再撮影してください。";
+        scoreArea.style.display = "block";
+        diagnosisStartBtn.disabled = false;
+      };
+
+      img.src = capturedImageDataUrl;
+
     } else {
       commentArea.textContent = "手が写っていません。もう一度撮影してください。";
       scoreArea.style.display = "block";
+      diagnosisStartBtn.disabled = false;
     }
-    diagnosisStartBtn.disabled = false;
-  }
-
+}
   cameraStartBtn.addEventListener("click", async () => {
     cameraStartBtn.disabled = true;
     shutterBtn.disabled = true;
