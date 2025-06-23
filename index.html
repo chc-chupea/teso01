@@ -19,29 +19,33 @@
   }
   main {
     flex-grow: 1; max-width: 480px; width: 100%; padding: 0 1rem;
+    position: relative;
   }
-  video {
+  video, canvas {
     width: 100%; max-width: 480px; border-radius: 1rem;
     background: #eee;
+    display: block;
   }
-  canvas {
-    position: absolute;
-    left: 0; top: 0;
-    width: 100%; max-width: 480px; height: auto;
+  #canvas {
+    display: none;
   }
   .controls {
     margin: 1rem 0;
     display: flex; justify-content: space-around; flex-wrap: wrap;
     gap: 0.5rem;
   }
-  select, button {
+  button, select {
     font-size: 1rem;
-    padding: 0.4rem 1rem;
+    padding: 0.5rem 1rem;
     border-radius: 0.5rem;
     border: 1px solid #c48e9a;
     background: #ffe6f0;
     color: #5a3e36;
     cursor: pointer;
+  }
+  button:disabled {
+    background: #f4c1d2;
+    cursor: not-allowed;
   }
   .score-area {
     margin-top: 1rem;
@@ -61,7 +65,6 @@
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
 </head>
 <body>
@@ -69,10 +72,12 @@
 <header>手相ミライ診断</header>
 
 <main>
-  <video id="video" autoplay muted playsinline></video>
+  <button id="cameraStartBtn">カメラ起動</button>
+  <video id="video" autoplay playsinline></video>
+  <button id="shutterBtn" disabled>シャッターを切る</button>
   <canvas id="canvas"></canvas>
 
-  <div class="controls">
+  <div class="controls" style="margin-top:1rem;">
     <select id="handSelect">
       <option value="right">右手（未来）</option>
       <option value="left">左手（生まれつき）</option>
@@ -87,7 +92,7 @@
       <option value="total">総合運 🌟</option>
     </select>
 
-    <button id="startBtn">診断開始</button>
+    <button id="diagnosisStartBtn" disabled>診断開始</button>
   </div>
 
   <div class="score-area" id="scoreArea" style="display:none;">
@@ -102,18 +107,21 @@
   const videoElement = document.getElementById('video');
   const canvasElement = document.getElementById('canvas');
   const canvasCtx = canvasElement.getContext('2d');
+  const cameraStartBtn = document.getElementById('cameraStartBtn');
+  const shutterBtn = document.getElementById('shutterBtn');
+  const diagnosisStartBtn = document.getElementById('diagnosisStartBtn');
   const handSelect = document.getElementById('handSelect');
   const genreSelect = document.getElementById('genreSelect');
-  const startBtn = document.getElementById('startBtn');
   const scoreArea = document.getElementById('scoreArea');
   const scoreValueElem = document.getElementById('scoreValue');
   const commentArea = document.getElementById('commentArea');
 
-  let camera = null;
+  let cameraStream = null;
   let hands = null;
-  let detecting = false;
+  let landmarksForDiagnosis = null;
 
-  // 診断コメント（例として恋愛ジャンルの20段階コメント）
+  // コメントは前回と同じものを使います（省略のため割愛）
+
   const comments = {
     love: [
       "まだまだ魅力が眠っています。焦らずゆっくり。", 
@@ -255,86 +263,123 @@
     );
   }
 
-  // 指の開き具合スコア計算（例）: 親指と人差し指間距離の割合で簡易判定
+  // 指の開き具合スコア計算（例）: 親指先（4）と人差し指先（8）間距離の割合で簡易判定
   function calcScore(landmarks) {
-    // 親指先（4）と人差し指先（8）の距離
     const dist = calcDistance(landmarks[4], landmarks[8]);
-    // 手首（0）から中指先（12）までの距離を基準
     const base = calcDistance(landmarks[0], landmarks[12]);
-    // 距離比率を0~20のスコアに変換（大きいほど指が開いてる）
-    let score = Math.min(20, Math.floor((dist / base) * 20));
-    if(score < 0) score = 0;
+    let score = Math.min(19, Math.floor((dist / base) * 20));
+    if (score < 0) score = 0;
     return score;
   }
 
-  function onResults(results) {
-    canvasCtx.save();
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-      for (const landmarks of results.multiHandLandmarks) {
-        window.drawConnectors(canvasCtx, landmarks, window.HAND_CONNECTIONS, { color: '#ffb6c1', lineWidth: 3 });
-        window.drawLandmarks(canvasCtx, landmarks, { color: '#ff1493', lineWidth: 2 });
-
-        const score = calcScore(landmarks);
-        scoreValueElem.textContent = score;
-
-        // 選択ジャンルに合わせてコメントを表示
-        const genre = genreSelect.value;
-        // 0~19インデックスでコメントを取得
-        const idx = Math.min(score, comments[genre].length - 1);
-        commentArea.textContent = comments[genre][idx];
-
-        scoreArea.style.display = "block";
-      }
-    } else {
-      scoreArea.style.display = "none";
-    }
-    canvasCtx.restore();
-  }
-
-  function startCamera() {
-    if (camera) {
-      camera.start();
-      return;
-    }
-    hands = new window.Hands({
-      locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-      }
+  // MediaPipe Hands 初期化（診断用に後で実行）
+  function createHandsInstance(onResultsCallback) {
+    const handsInstance = new window.Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
-    hands.setOptions({
+    handsInstance.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
       minDetectionConfidence: 0.7,
       minTrackingConfidence: 0.7
     });
-    hands.onResults(onResults);
-
-    camera = new window.Camera(videoElement, {
-      onFrame: async () => {
-        await hands.send({image: videoElement});
-      },
-      width: 480,
-      height: 360,
-    });
-    camera.start();
-
-    // canvasサイズをvideoサイズに合わせる
-    videoElement.addEventListener('loadedmetadata', () => {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
-    });
+    handsInstance.onResults(onResultsCallback);
+    return handsInstance;
   }
 
-  startBtn.addEventListener('click', () => {
-    if (!detecting) {
-      startCamera();
-      detecting = true;
-      startBtn.textContent = "診断中…";
-      startBtn.disabled = true;
+  // カメラ起動（背面カメラ優先）
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: "environment" } }, audio: false
+      });
+      videoElement.srcObject = stream;
+      cameraStream = stream;
+      shutterBtn.disabled = false;
+    } catch (e) {
+      // 背面カメラなければ前面カメラにフォールバック
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" }, audio: false
+      });
+      videoElement.srcObject = stream;
+      cameraStream = stream;
+      shutterBtn.disabled = false;
     }
+    await videoElement.play();
+
+    // canvasサイズ合わせる
+    canvasElement.width = videoElement.videoWidth || 480;
+    canvasElement.height = videoElement.videoHeight || 360;
+
+    // video表示、canvasは隠す
+    videoElement.style.display = "block";
+    canvasElement.style.display = "none";
+
+    diagnosisStartBtn.disabled = true;
+    scoreArea.style.display = "none";
+  }
+
+  // シャッター処理
+  shutterBtn.addEventListener("click", () => {
+    // videoからcanvasに静止画描画
+    canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+    landmarksForDiagnosis = null; // リセット
+
+    // カメラ停止
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      cameraStream = null;
+    }
+    videoElement.srcObject = null;
+    videoElement.style.display = "none";
+
+    // canvas表示（撮った写真）
+    canvasElement.style.display = "block";
+
+    shutterBtn.disabled = true;
+    cameraStartBtn.disabled = false;
+
+    diagnosisStartBtn.disabled = false;
+    scoreArea.style.display = "none";
   });
+
+  // 診断開始時の処理
+  diagnosisStartBtn.addEventListener("click", () => {
+    diagnosisStartBtn.disabled = true;
+    scoreArea.style.display = "none";
+
+    // MediaPipe Hands で静止画を解析
+    if (!hands) {
+      hands = createHandsInstance(onDiagnosisResults);
+    }
+    hands.send({image: canvasElement});
+  });
+
+  // 診断結果取得時
+  function onDiagnosisResults(results) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      landmarksForDiagnosis = results.multiHandLandmarks[0];
+      const score = calcScore(landmarksForDiagnosis);
+      scoreValueElem.textContent = score;
+
+      const genre = genreSelect.value;
+      const idx = Math.min(score, comments[genre].length - 1);
+      commentArea.textContent = comments[genre][idx];
+      scoreArea.style.display = "block";
+    } else {
+      commentArea.textContent = "手が写っていません。もう一度撮影してください。";
+      scoreArea.style.display = "block";
+    }
+    diagnosisStartBtn.disabled = false;
+  }
+
+  // ボタンイベント
+  cameraStartBtn.addEventListener("click", async () => {
+    cameraStartBtn.disabled = true;
+    shutterBtn.disabled = true;
+    await startCamera();
+  });
+
 </script>
 
 </body>
