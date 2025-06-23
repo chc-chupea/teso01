@@ -1,221 +1,341 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <title>手相AI診断 - カメラ対応版</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
-  <style>
-    body {
-      font-family: sans-serif;
-      background-color: #e0f7fa;
-      text-align: center;
-      padding: 20px;
-    }
-    canvas {
-      border: 1px solid #ccc;
-      max-width: 100%;
-      touch-action: manipulation;
-    }
-    button, input[type="file"] {
-      margin: 10px;
-      padding: 10px 20px;
-      font-size: 16px;
-      border: none;
-      background: #4dd0e1;
-      color: white;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-    #resultText {
-      margin-top: 10px;
-      font-size: 16px;
-      white-space: pre-wrap;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>手相ミライ診断</title>
+<style>
+  body {
+    font-family: "Yu Gothic", sans-serif;
+    background: #fff0f6;
+    color: #5a3e36;
+    margin: 0; padding: 0;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  header {
+    padding: 1rem; font-size: 1.4rem; font-weight: bold;
+    background: #f8c6d4; width: 100%; text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  main {
+    flex-grow: 1; max-width: 480px; width: 100%; padding: 0 1rem;
+  }
+  video {
+    width: 100%; max-width: 480px; border-radius: 1rem;
+    background: #eee;
+  }
+  canvas {
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; max-width: 480px; height: auto;
+  }
+  .controls {
+    margin: 1rem 0;
+    display: flex; justify-content: space-around; flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  select, button {
+    font-size: 1rem;
+    padding: 0.4rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid #c48e9a;
+    background: #ffe6f0;
+    color: #5a3e36;
+    cursor: pointer;
+  }
+  .score-area {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #fff0f6;
+    border-radius: 0.8rem;
+    box-shadow: 0 0 10px #f0a6b2;
+    text-align: center;
+  }
+  .comment {
+    margin-top: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+  footer {
+    font-size: 0.8rem; color: #9e7d84; padding: 1rem;
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
 </head>
 <body>
-  <h2>📷 手のひらでAI手相診断（カメラ対応）</h2>
-  <input type="file" id="fileInput" accept="image/*" capture="environment" />
-  <canvas id="canvas"></canvas><br />
-  <button id="diagnoseBtn">🧠 診断する</button>
-  <div id="resultText"></div>
 
-  <script>
-    const fileInput = document.getElementById("fileInput");
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
-    const diagnoseBtn = document.getElementById("diagnoseBtn");
-    const resultText = document.getElementById("resultText");
+<header>手相ミライ診断</header>
 
-    let lines = [];
+<main>
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="canvas"></canvas>
 
-    fileInput.addEventListener("change", e => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const img = new Image();
-      img.onload = () => {
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0);
-        setTimeout(() => processImage(img), 500);
-      };
-      img.src = URL.createObjectURL(file);
+  <div class="controls">
+    <select id="handSelect">
+      <option value="right">右手（未来）</option>
+      <option value="left">左手（生まれつき）</option>
+    </select>
+
+    <select id="genreSelect">
+      <option value="love">ラブ運 💕</option>
+      <option value="work">仕事運 💼</option>
+      <option value="money">金運 💰</option>
+      <option value="personality">性格 🧠</option>
+      <option value="health">健康運 💪</option>
+      <option value="total">総合運 🌟</option>
+    </select>
+
+    <button id="startBtn">診断開始</button>
+  </div>
+
+  <div class="score-area" id="scoreArea" style="display:none;">
+    <div>指の開き具合スコア：<span id="scoreValue">0</span></div>
+    <div class="comment" id="commentArea"></div>
+  </div>
+</main>
+
+<footer>© 2025 手相ミライ診断</footer>
+
+<script>
+  const videoElement = document.getElementById('video');
+  const canvasElement = document.getElementById('canvas');
+  const canvasCtx = canvasElement.getContext('2d');
+  const handSelect = document.getElementById('handSelect');
+  const genreSelect = document.getElementById('genreSelect');
+  const startBtn = document.getElementById('startBtn');
+  const scoreArea = document.getElementById('scoreArea');
+  const scoreValueElem = document.getElementById('scoreValue');
+  const commentArea = document.getElementById('commentArea');
+
+  let camera = null;
+  let hands = null;
+  let detecting = false;
+
+  // 診断コメント（例として恋愛ジャンルの20段階コメント）
+  const comments = {
+    love: [
+      "まだまだ魅力が眠っています。焦らずゆっくり。", 
+      "もうすぐ誰かがあなたに気づく予感。",
+      "素直な気持ちが好感度UPの鍵。",
+      "笑顔を忘れずに。モテ度アップ！",
+      "出会い運上昇中。積極的に行動を。",
+      "あなたの魅力が輝き始めています。",
+      "心を開くと素敵な恋が訪れるかも。",
+      "周りの人から好かれる優しさが出てます。",
+      "自信を持つことで新しい出会いが増えるでしょう。",
+      "ラブチャンス到来。勇気を出して！",
+      "相手の話をよく聞くと運気が上がります。",
+      "恋愛運絶好調！新しい恋が始まる予感。",
+      "魅力的なオーラが漂っています。",
+      "恋の波が来ています。タイミングを逃さずに。",
+      "出会いが広がり、心がときめきます。",
+      "深い絆を築けるチャンスです。",
+      "あなたの愛情が相手に伝わるでしょう。",
+      "恋愛運トップクラス。自信を持って！",
+      "素敵な出会いが待っています。準備万端！",
+      "モテモテ状態。素敵な恋が始まります。"
+    ],
+    work: [
+      "まだ模索中。焦らずキャリアを考えよう。",
+      "努力が実り始めています。",
+      "チームワークがカギです。",
+      "リーダーシップを発揮する時期です。",
+      "新しい挑戦が成功に繋がります。",
+      "あなたの野心が認められそうです。",
+      "仕事のスキルが飛躍的に向上します。",
+      "協調性を大切にすると運気アップ。",
+      "周囲からの信頼が厚くなります。",
+      "キャリアアップのチャンス到来。",
+      "積極的な行動が成功を呼びます。",
+      "新規プロジェクトに関わると吉。",
+      "仕事運絶好調。成果が期待できます。",
+      "目標達成が見えてきます。",
+      "あなたの才能が輝きを増します。",
+      "挑戦を恐れず前に進みましょう。",
+      "同僚との関係が良好です。",
+      "リーダーとしての資質が評価されます。",
+      "昇進のチャンスが訪れます。",
+      "成功が目前。最後まで努力を。"
+    ],
+    money: [
+      "お金の管理に気をつけましょう。",
+      "節約が功を奏します。",
+      "収入アップの兆しがあります。",
+      "計画的な貯蓄を始めると吉。",
+      "無駄遣いに注意が必要です。",
+      "投資に関心を持つのが良い時期。",
+      "お金の流れが良くなってきます。",
+      "財テクの勉強を始めると吉。",
+      "お金の使い方にメリハリが出ます。",
+      "貯蓄が順調に増えます。",
+      "収支のバランスが整います。",
+      "副収入の可能性が見えてきます。",
+      "浪費癖が改善されます。",
+      "資産運用の知識が役立ちます。",
+      "お金に関する良い知らせがあります。",
+      "計画的に使うことで運気アップ。",
+      "無理のない投資が成功します。",
+      "財政面で安定感が増します。",
+      "収入が増え、余裕が出てきます。",
+      "金運絶好調。大きなチャンス到来。"
+    ],
+    personality: [
+      "まだ自分の良さに気づいていません。",
+      "人とのコミュニケーションが鍵です。",
+      "誠実さがあなたの魅力。",
+      "おおらかさが周囲を和ませます。",
+      "新しいことに挑戦しましょう。",
+      "自分らしさを大切にすると運気アップ。",
+      "リーダーシップが発揮できます。",
+      "周囲に頼られる存在です。",
+      "バランス感覚が優れています。",
+      "協調性が高まり良い関係が築けます。",
+      "感受性が豊かでクリエイティブ。",
+      "柔軟な考えが新しい道を開きます。",
+      "明るさが人を惹きつけます。",
+      "誠実さが信頼を呼びます。",
+      "自信がさらに高まる時期です。",
+      "あなたの魅力が開花します。",
+      "思いやりの心が運気を上げます。",
+      "決断力が増しチャンスを掴みます。",
+      "感情のコントロールが上手くなります。",
+      "性格運絶好調。素敵な毎日が続きます。"
+    ],
+    health: [
+      "疲れが溜まっています。休息を。",
+      "バランスの良い食事を心がけて。",
+      "運動を始めると良い結果が出ます。",
+      "規則正しい生活が大切です。",
+      "ストレス解消法を見つけましょう。",
+      "体調が安定してきます。",
+      "良質な睡眠が回復を促します。",
+      "健康診断を受けると安心です。",
+      "無理せずペースを守りましょう。",
+      "体力がアップし活力が出ます。",
+      "良い習慣が身についています。",
+      "日々のケアが功を奏します。",
+      "心身ともにバランスが取れています。",
+      "健康運絶好調。元気に過ごせます。",
+      "体調管理が成功のカギです。",
+      "免疫力が高まっています。",
+      "軽い運動でさらに好調に。",
+      "体の声を聞くことが大切です。",
+      "健康的な生活が習慣化します。",
+      "長寿運も良好。安心して過ごせます。"
+    ],
+    total: [
+      "全体的にまだ始まったばかりです。",
+      "運気が徐々に上向いています。",
+      "良い変化が訪れる兆しがあります。",
+      "全体運が安定してきました。",
+      "新しい挑戦に適した時期です。",
+      "幸運が舞い込んでいます。",
+      "バランスの良い日々が続きます。",
+      "自分らしさが輝く時期です。",
+      "転機の訪れを感じるでしょう。",
+      "チャンスを逃さず掴みましょう。",
+      "良い出会いや出来事が増えます。",
+      "積極的な行動が吉です。",
+      "運気絶好調。最高のタイミング。",
+      "目標達成に向けて順調です。",
+      "自信と実力が伴っています。",
+      "周囲のサポートが得られます。",
+      "心身ともに調和が取れています。",
+      "幸運が続き良い結果が出ます。",
+      "充実した日々を過ごせます。",
+      "全体運トップクラス。素晴らしい未来が。"
+    ]
+  };
+
+  function calcDistance(a, b) {
+    return Math.sqrt(
+      (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2
+    );
+  }
+
+  // 指の開き具合スコア計算（例）: 親指と人差し指間距離の割合で簡易判定
+  function calcScore(landmarks) {
+    // 親指先（4）と人差し指先（8）の距離
+    const dist = calcDistance(landmarks[4], landmarks[8]);
+    // 手首（0）から中指先（12）までの距離を基準
+    const base = calcDistance(landmarks[0], landmarks[12]);
+    // 距離比率を0~20のスコアに変換（大きいほど指が開いてる）
+    let score = Math.min(20, Math.floor((dist / base) * 20));
+    if(score < 0) score = 0;
+    return score;
+  }
+
+  function onResults(results) {
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      for (const landmarks of results.multiHandLandmarks) {
+        window.drawConnectors(canvasCtx, landmarks, window.HAND_CONNECTIONS, { color: '#ffb6c1', lineWidth: 3 });
+        window.drawLandmarks(canvasCtx, landmarks, { color: '#ff1493', lineWidth: 2 });
+
+        const score = calcScore(landmarks);
+        scoreValueElem.textContent = score;
+
+        // 選択ジャンルに合わせてコメントを表示
+        const genre = genreSelect.value;
+        // 0~19インデックスでコメントを取得
+        const idx = Math.min(score, comments[genre].length - 1);
+        commentArea.textContent = comments[genre][idx];
+
+        scoreArea.style.display = "block";
+      }
+    } else {
+      scoreArea.style.display = "none";
+    }
+    canvasCtx.restore();
+  }
+
+  function startCamera() {
+    if (camera) {
+      camera.start();
+      return;
+    }
+    hands = new window.Hands({
+      locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+      }
     });
-
-    function processImage(img) {
-      const src = cv.imread(img);
-      let gray = new cv.Mat();
-      let edges = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 1.5, 1.5);
-      cv.Canny(gray, edges, 50, 150);
-
-      let linesMat = new cv.Mat();
-      cv.HoughLinesP(edges, linesMat, 1, Math.PI / 180, 60, 60, 10);
-
-      lines = [];
-      for (let i = 0; i < linesMat.rows; i++) {
-        let [x1, y1, x2, y2] = linesMat.intPtr(i);
-        lines.push({ x1, y1, x2, y2, label: null });
-      }
-
-      classifyLinesAI(lines, canvas.height);
-      drawLines();
-
-      src.delete();
-      gray.delete();
-      edges.delete();
-      linesMat.delete();
-    }
-
-    function classifyLinesAI(lines, height) {
-      lines.forEach(line => {
-        const angle = lineAngle(line);
-        const centerY = (line.y1 + line.y2) / 2;
-
-        // 簡易判定: 上部エリアかつ傾きが下向きなら感情線
-        if (centerY < height * 0.33 && angle < -10 && angle > -80) {
-          line.label = "感情線";
-        }
-        // 中央エリアは知能線
-        else if (centerY >= height * 0.33 && centerY < height * 0.66) {
-          line.label = "知能線";
-        }
-        // それ以外は生命線
-        else {
-          line.label = "生命線";
-        }
-      });
-    }
-
-    function drawLines() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.lineWidth = 2;
-      lines.forEach(line => {
-        switch (line.label) {
-          case "感情線": ctx.strokeStyle = "red"; break;
-          case "知能線": ctx.strokeStyle = "blue"; break;
-          case "生命線": ctx.strokeStyle = "green"; break;
-          default: ctx.strokeStyle = "gray"; break;
-        }
-        ctx.beginPath();
-        ctx.moveTo(line.x1, line.y1);
-        ctx.lineTo(line.x2, line.y2);
-        ctx.stroke();
-      });
-    }
-
-    diagnoseBtn.addEventListener("click", () => {
-      const diagnosis = generateDiagnosis(lines);
-      resultText.innerText = diagnosis.join("\n");
-      drawLines();
-      ctx.fillStyle = "black";
-      ctx.font = "16px sans-serif";
-      diagnosis.forEach((text, i) => {
-        ctx.fillText(text, 10, canvas.height - (diagnosis.length - i) * 24);
-      });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
     });
+    hands.onResults(onResults);
 
-    function lineLength(line) {
-      return Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
+    camera = new window.Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 480,
+      height: 360,
+    });
+    camera.start();
+
+    // canvasサイズをvideoサイズに合わせる
+    videoElement.addEventListener('loadedmetadata', () => {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+    });
+  }
+
+  startBtn.addEventListener('click', () => {
+    if (!detecting) {
+      startCamera();
+      detecting = true;
+      startBtn.textContent = "診断中…";
+      startBtn.disabled = true;
     }
+  });
+</script>
 
-    function lineAngle(line) {
-      return Math.atan2(line.y2 - line.y1, line.x2 - line.x1) * 180 / Math.PI;
-    }
-
-    function generateDiagnosis(lines) {
-      const result = [];
-      const emotionLine = lines.find(l => l.label === "感情線");
-      const brainLine = lines.find(l => l.label === "知能線");
-      const lifeLine = lines.find(l => l.label === "生命線");
-
-      if (emotionLine) {
-        const len = lineLength(emotionLine);
-        const ang = lineAngle(emotionLine);
-        if (len > 250 && ang < -20) {
-          result.push("💖 恋愛：情熱的で恋に一直線！");
-        } else if (len > 200 && ang > 0) {
-          result.push("💖 恋愛：愛情深く尽くすタイプ");
-        } else if (len < 150) {
-          result.push("💖 恋愛：恋に奥手でなかなか動けない");
-        } else {
-          result.push("💖 恋愛：感情は内に秘めるタイプ");
-        }
-      }
-
-      if (brainLine) {
-        const ang = lineAngle(brainLine);
-        if (ang < -45) {
-          result.push("🧠 頭脳：直感派・アイデア重視タイプ");
-        } else if (ang > -15) {
-          result.push("🧠 頭脳：論理派・慎重な分析型");
-        } else {
-          result.push("🧠 頭脳：状況判断が得意なバランスタイプ");
-        }
-      }
-
-      if (lifeLine) {
-        const len = lineLength(lifeLine);
-        if (len > 250) {
-          result.push("💪 健康：体力・精神力ともに強靭！");
-        } else if (len > 180) {
-          result.push("💪 健康：健康への意識が高いタイプ");
-        } else {
-          result.push("💪 健康：無理しすぎず休息も大切に");
-        }
-      }
-
-      if (emotionLine && brainLine) {
-        const dy = Math.abs(emotionLine.y1 - brainLine.y1);
-        if (dy < 30) {
-          result.push("💰 金運：計画的に貯めるタイプ");
-        } else if (dy > 60) {
-          result.push("💰 金運：お金の流れに波がありそう");
-        } else {
-          result.push("💰 金運：人脈が金運を左右するタイプ");
-        }
-      } else {
-        result.push("💰 金運：堅実と大胆の中間タイプ");
-      }
-
-      if (brainLine) {
-        const ang = lineAngle(brainLine);
-        const len = lineLength(brainLine);
-        if (ang < -45 && len > 200) {
-          result.push("💼 仕事：創造的な仕事にやりがいを感じる");
-        } else if (ang > -20) {
-          result.push("💼 仕事：論理型でIT・研究に向く");
-        } else {
-          result.push("💼 仕事：空気を読んで動くバランスタイプ");
-        }
-      }
-
-      return result;
-    }
-  </script>
 </body>
 </html>
